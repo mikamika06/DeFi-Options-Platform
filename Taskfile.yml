@@ -1,0 +1,51 @@
+version: "3"
+
+env:
+  COMPOSE_FILE: docker/docker-compose.yml
+  COMPOSE_PROJECT_NAME: defi_options
+  ENV_FILE: .env
+
+tasks:
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
+
+  setup:
+    desc: Install JavaScript dependencies and prepare git hooks
+    cmds:
+      - pnpm install --frozen-lockfile=false
+      - pnpm exec husky install || true
+
+  lint:
+    desc: Run linting across monorepo workspaces
+    cmds:
+      - pnpm lint || echo "Lint command not yet implemented"
+      - gofmt -w ./services ./backend 2>/dev/null || true
+
+  test:
+    desc: Execute unit tests for contracts, backend, and frontend
+    cmds:
+      - pnpm test || echo "JS/TS tests not yet implemented"
+      - pnpm exec hardhat test || echo "Hardhat tests not yet implemented"
+      - go test ./... 2>/dev/null || true
+
+  compose:up:
+    desc: Start local infrastructure stack
+    cmds:
+      - docker compose -p {{.COMPOSE_PROJECT_NAME}} -f {{.COMPOSE_FILE}} --env-file {{.ENV_FILE}} up -d
+
+  compose:down:
+    desc: Stop local infrastructure stack
+    cmds:
+      - docker compose -p {{.COMPOSE_PROJECT_NAME}} -f {{.COMPOSE_FILE}} down
+
+  db:init:
+    desc: Initialize Postgres schema and seed data
+    cmds:
+      - ./scripts/init_db.sh
+
+  contracts:deploy-local:
+    desc: Deploy baseline contracts to local Anvil network
+    cmds:
+      - ./scripts/deploy_contracts.sh

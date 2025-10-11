@@ -1,0 +1,17 @@
+{
+  "recommendations": [
+    "esbenp.prettier-vscode",
+    "dbaeumer.vscode-eslint",
+    "NomicFoundation.hardhat-solidity",
+    "tintinweb.graphviz-interactive-preview",
+    "ms-vscode.vscode-typescript-next",
+    "ms-azuretools.vscode-docker",
+    "hashicorp.terraform",
+    "golang.go",
+    "njpwerner.autodocstring",
+    "ms-python.python",
+    "redhat.vscode-yaml",
+    "orta.vscode-jest",
+    "streetsidesoftware.code-spell-checker"
+  ]
+}
