@@ -7,4 +7,12 @@ interface ICollateralManager {
     function withdraw(address account, address asset, uint256 amount) external;
 
     function getAccountMargin(address account) external view returns (uint256 equity, uint256 maintenance);
+
+    function lockMargin(address account, uint256 amountWad, uint256 maintenanceWad) external;
+
+    function releaseMargin(address account, uint256 amountWad, uint256 maintenanceReductionWad) external;
+
+    function evaluateAccount(address account) external returns (uint256 equity, uint256 locked, uint256 maintenance);
+
+    function resolveLiquidation(address account) external;
 }

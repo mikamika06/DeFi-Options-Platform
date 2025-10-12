@@ -15,6 +15,7 @@ contract InsuranceFund is AccessControl {
 
     bytes32 public constant TREASURER_ROLE = keccak256("TREASURER_ROLE");
     bytes32 public constant STRATEGIST_ROLE = keccak256("STRATEGIST_ROLE");
+    bytes32 public constant MARKET_ROLE = keccak256("MARKET_ROLE");
 
     struct AssetBalance {
         uint256 totalDeposited;
@@ -27,6 +28,8 @@ contract InsuranceFund is AccessControl {
     event AssetApproved(address indexed asset, bool approved);
     event FundsDeposited(address indexed asset, uint256 amount, address indexed from);
     event FundsWithdrawn(address indexed asset, uint256 amount, address indexed to);
+    event PremiumNotified(address indexed asset, uint256 amount);
+    event CoverageProvided(address indexed asset, uint256 requested, uint256 provided, address indexed recipient);
     event RescueExecuted(address indexed asset, uint256 amount, address indexed recipient);
 
     error InsuranceFund_InvalidAddress();
@@ -37,11 +40,20 @@ contract InsuranceFund is AccessControl {
         _grantRole(DEFAULT_ADMIN_ROLE, admin);
         _grantRole(TREASURER_ROLE, admin);
         _grantRole(STRATEGIST_ROLE, admin);
+        _grantRole(MARKET_ROLE, admin);
     }
 
     function setAssetApproval(address asset, bool approved) external onlyRole(TREASURER_ROLE) {
         approvedAsset[asset] = approved;
         emit AssetApproved(asset, approved);
+    }
+
+    function setMarket(address market, bool enabled) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (enabled) {
+            _grantRole(MARKET_ROLE, market);
+        } else {
+            _revokeRole(MARKET_ROLE, market);
+        }
     }
 
     function deposit(address asset, uint256 amount) external onlyRole(TREASURER_ROLE) {
@@ -53,6 +65,29 @@ contract InsuranceFund is AccessControl {
         balance.totalDeposited += amount;
 
         emit FundsDeposited(asset, amount, msg.sender);
+    }
+
+    function notifyPremium(address asset, uint256 amount) external onlyRole(MARKET_ROLE) {
+        if (!approvedAsset[asset]) revert InsuranceFund_AssetNotApproved();
+        assetBalances[asset].totalDeposited += amount;
+        emit PremiumNotified(asset, amount);
+    }
+
+    function requestCoverage(address asset, uint256 amount, address recipient)
+        external
+        onlyRole(MARKET_ROLE)
+        returns (uint256 provided)
+    {
+        if (!approvedAsset[asset]) revert InsuranceFund_AssetNotApproved();
+        if (recipient == address(0)) revert InsuranceFund_InvalidAddress();
+
+        uint256 balance = IERC20(asset).balanceOf(address(this));
+        provided = amount > balance ? balance : amount;
+        if (provided > 0) {
+            IERC20(asset).safeTransfer(recipient, provided);
+            assetBalances[asset].totalWithdrawn += provided;
+            emit CoverageProvided(asset, amount, provided, recipient);
+        }
     }
 
     function withdraw(address asset, uint256 amount, address recipient) external onlyRole(TREASURER_ROLE) {

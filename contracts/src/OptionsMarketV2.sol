@@ -2,8 +2,8 @@
 pragma solidity ^0.8.26;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
-import {Pausable} from "@openzeppelin/contracts/security/Pausable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -12,6 +12,8 @@ import {OptionToken} from "./OptionToken.sol";
 import {IOracleRouter} from "./interfaces/IOracleRouter.sol";
 import {IIVOracle} from "./interfaces/IIVOracle.sol";
 import {ICollateralManager} from "./interfaces/ICollateralManager.sol";
+import {ILiquidityVault} from "./interfaces/ILiquidityVault.sol";
+import {IInsuranceFund} from "./interfaces/IInsuranceFund.sol";
 
 /**
  * @title OptionsMarketV2
@@ -24,6 +26,7 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
     bytes32 public constant RISK_MANAGER_ROLE = keccak256("RISK_MANAGER_ROLE");
     bytes32 public constant IV_UPDATER_ROLE = keccak256("IV_UPDATER_ROLE");
+    bytes32 public constant LIQUIDATOR_ROLE = keccak256("LIQUIDATOR_ROLE");
 
     error OptionsMarket_InvalidAddress();
     error OptionsMarket_SeriesExists(bytes32 id);
@@ -36,6 +39,8 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
     error OptionsMarket_InvalidVolatility();
     error OptionsMarket_InvalidSpot();
     error OptionsMarket_SlippageExceeded(uint256 actual, uint256 maxAllowed);
+    error OptionsMarket_InsufficientLiquidity();
+    error OptionsMarket_SizeTooLarge();
 
     struct SeriesConfig {
         address underlying;
@@ -60,10 +65,18 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
     IOracleRouter public oracleRouter;
     IIVOracle public ivOracle;
     ICollateralManager public collateralManager;
+    ILiquidityVault public liquidityVault;
+    IInsuranceFund public insuranceFund;
     address public feeRecipient;
+    uint16 public insuranceFeeBps;
+    uint16 public vaultSettlementShareBps;
+    uint16 public insuranceSettlementShareBps;
 
     mapping(bytes32 => SeriesState) internal seriesState;
     bytes32[] internal seriesIds;
+    mapping(bytes32 => uint256) internal seriesPremiumReserve;
+    mapping(bytes32 => mapping(address => uint256)) internal userMarginWad;
+    mapping(bytes32 => mapping(address => uint256)) internal userPositionSize;
 
     event SeriesCreated(
         bytes32 indexed id,
@@ -88,6 +101,35 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         uint256 premium,
         uint256 fee
     );
+    event PositionClosed(
+        bytes32 indexed id,
+        address indexed account,
+        uint256 size,
+        uint256 payout,
+        uint256 fee
+    );
+    event PositionExercised(bytes32 indexed id, address indexed trader, uint256 size, uint256 payout);
+    event SeriesResidualSwept(bytes32 indexed id, address indexed recipient, uint256 amount);
+    event PositionLiquidated(
+        bytes32 indexed id,
+        address indexed account,
+        address indexed initiator,
+        uint256 size,
+        uint256 payout
+    );
+
+    enum CloseMode {
+        Standard,
+        Liquidation
+    }
+
+    struct CloseContext {
+        uint256 premium;
+        uint256 fee;
+        uint256 reserve;
+        uint256 payout;
+        uint256 marginReleaseWad;
+    }
 
     constructor(
         OptionToken optionToken_,
@@ -118,6 +160,7 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         _grantRole(KEEPER_ROLE, admin);
         _grantRole(RISK_MANAGER_ROLE, admin);
         _grantRole(IV_UPDATER_ROLE, admin);
+        _grantRole(LIQUIDATOR_ROLE, admin);
     }
 
     function getSeries(bytes32 id) external view returns (SeriesState memory) {
@@ -150,8 +193,35 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
 
     function setCollateralManager(ICollateralManager newManager) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (address(newManager) == address(0)) revert OptionsMarket_InvalidAddress();
+        address oldManager = address(collateralManager);
+        if (oldManager != address(0)) {
+            _revokeRole(LIQUIDATOR_ROLE, oldManager);
+        }
         collateralManager = newManager;
+        _grantRole(LIQUIDATOR_ROLE, address(newManager));
         emit CollateralManagerUpdated(address(newManager));
+    }
+
+    function setLiquidityVault(ILiquidityVault newVault) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        liquidityVault = newVault;
+    }
+
+    function setInsuranceFund(IInsuranceFund newFund) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        insuranceFund = newFund;
+    }
+
+    function setInsuranceFeeBps(uint16 newFeeBps) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(newFeeBps <= 10_000, "fee too high");
+        insuranceFeeBps = newFeeBps;
+    }
+
+    function setSettlementShares(uint16 vaultShareBps, uint16 insuranceShareBps)
+        external
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        require(vaultShareBps + insuranceShareBps <= 10_000, "shares too high");
+        vaultSettlementShareBps = vaultShareBps;
+        insuranceSettlementShareBps = insuranceShareBps;
     }
 
     function pause() external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -208,6 +278,17 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         if (state.config.expiry <= block.timestamp) revert OptionsMarket_PastExpiry(id);
 
         (premium, fee) = _calculateQuote(state.config, id, size);
+        if (size > type(uint128).max - state.longOpenInterest) revert OptionsMarket_SizeTooLarge();
+
+        uint256 insuranceCut = 0;
+        if (address(insuranceFund) != address(0) && insuranceFeeBps > 0) {
+            insuranceCut = (premium * insuranceFeeBps) / 10_000;
+            if (insuranceCut > premium) {
+                insuranceCut = premium;
+            }
+        }
+
+        uint256 netPremium = premium - insuranceCut;
         uint256 total = premium + fee;
 
         emit QuoteEmitted(id, size, premium, fee);
@@ -218,6 +299,10 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
 
         IERC20 quoteAsset = IERC20(state.config.quote);
         quoteAsset.safeTransferFrom(msg.sender, address(this), total);
+        if (insuranceCut > 0) {
+            quoteAsset.safeTransfer(address(insuranceFund), insuranceCut);
+            insuranceFund.notifyPremium(state.config.quote, insuranceCut);
+        }
         if (fee > 0) {
             quoteAsset.safeTransfer(feeRecipient, fee);
         }
@@ -227,8 +312,245 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         state.longOpenInterest += uint128(size);
         state.totalPremiumCollected += uint128(total);
         state.lastIvUpdate = uint64(block.timestamp);
+        seriesPremiumReserve[id] += netPremium;
+
+        if (address(liquidityVault) != address(0)) {
+            liquidityVault.recordPremium(state.config.quote, netPremium);
+        }
+
+        if (address(collateralManager) != address(0)) {
+            uint8 quoteDecimals = IERC20Metadata(state.config.quote).decimals();
+            uint256 marginWad = _toWadFromDecimals(netPremium, quoteDecimals);
+            collateralManager.lockMargin(msg.sender, marginWad, marginWad / 2);
+            userMarginWad[id][msg.sender] += marginWad;
+        }
+
+        userPositionSize[id][msg.sender] += size;
 
         emit TradeExecuted(id, msg.sender, size, premium, fee);
+    }
+
+    function closePosition(bytes32 id, uint256 size, uint256 minPayout)
+        external
+        nonReentrant
+        whenNotPaused
+        returns (uint256 payout, uint256 fee)
+    {
+        if (size == 0) revert OptionsMarket_InvalidSize();
+
+        SeriesState storage state = seriesState[id];
+        if (state.config.underlying == address(0)) revert OptionsMarket_SeriesNotFound(id);
+        if (state.settled) revert OptionsMarket_SeriesSettled(id);
+        if (block.timestamp >= state.config.expiry) revert OptionsMarket_PastExpiry(id);
+
+        (payout, fee) = _closePositionInternal(
+            id,
+            msg.sender,
+            size,
+            minPayout,
+            msg.sender,
+            true,
+            CloseMode.Standard,
+            msg.sender
+        );
+    }
+
+    function liquidatePosition(bytes32 id, address account, uint256 size, address receiver)
+        external
+        nonReentrant
+        whenNotPaused
+        onlyRole(LIQUIDATOR_ROLE)
+        returns (uint256 payout, uint256 fee)
+    {
+        if (account == address(0)) revert OptionsMarket_InvalidAddress();
+        SeriesState storage state = seriesState[id];
+        if (state.config.underlying == address(0)) revert OptionsMarket_SeriesNotFound(id);
+        if (state.settled) revert OptionsMarket_SeriesSettled(id);
+        if (block.timestamp >= state.config.expiry) revert OptionsMarket_PastExpiry(id);
+
+        address payoutReceiver = receiver == address(0) ? feeRecipient : receiver;
+        (payout, fee) = _closePositionInternal(
+            id,
+            account,
+            size,
+            0,
+            payoutReceiver,
+            false,
+            CloseMode.Liquidation,
+            msg.sender
+        );
+    }
+
+    function _closePositionInternal(
+        bytes32 id,
+        address account,
+        uint256 size,
+        uint256 minPayout,
+        address payoutReceiver,
+        bool enforceMinPayout,
+        CloseMode mode,
+        address initiator
+    ) internal returns (uint256 payout, uint256 fee) {
+        if (account == address(0)) revert OptionsMarket_InvalidAddress();
+        SeriesState storage state = seriesState[id];
+
+        if (optionToken.balanceOf(account, uint256(id)) < size) revert OptionsMarket_InvalidSize();
+
+        CloseContext memory ctx;
+        ctx.marginReleaseWad = _updateUserMargin(id, account, size);
+
+        (ctx.premium, ctx.fee) = _calculateQuote(state.config, id, size);
+        ctx.reserve = seriesPremiumReserve[id];
+        if (ctx.premium > ctx.reserve) {
+            uint256 covered = _requestCoverage(state.config.quote, ctx.premium - ctx.reserve);
+            ctx.reserve += covered;
+            if (ctx.premium > ctx.reserve) revert OptionsMarket_InsufficientLiquidity();
+        }
+
+        ctx.payout = ctx.premium;
+        if (ctx.fee > 0) {
+            ctx.payout = ctx.premium - ctx.fee;
+        }
+
+        if (enforceMinPayout && minPayout != 0 && ctx.payout < minPayout) {
+            revert OptionsMarket_SlippageExceeded(minPayout, ctx.payout);
+        }
+
+        seriesPremiumReserve[id] = ctx.reserve - ctx.premium;
+        state.longOpenInterest -= uint128(size);
+
+        if (ctx.fee > 0) {
+            IERC20(state.config.quote).safeTransfer(feeRecipient, ctx.fee);
+        }
+        IERC20(state.config.quote).safeTransfer(payoutReceiver, ctx.payout);
+
+        optionToken.burn(account, uint256(id), size);
+
+        if (address(liquidityVault) != address(0)) {
+            liquidityVault.recordLoss(state.config.quote, ctx.premium);
+        }
+
+        if (address(collateralManager) != address(0) && ctx.marginReleaseWad > 0) {
+            collateralManager.releaseMargin(account, ctx.marginReleaseWad, ctx.marginReleaseWad / 2);
+        }
+
+        if (mode == CloseMode.Standard) {
+            emit PositionClosed(id, account, size, ctx.payout, ctx.fee);
+        } else {
+            emit PositionLiquidated(id, account, initiator, size, ctx.payout);
+        }
+
+        payout = ctx.payout;
+        fee = ctx.fee;
+    }
+
+    function exercise(bytes32 id, uint256 size, uint256 minPayout)
+        external
+        nonReentrant
+        returns (uint256 payout)
+    {
+        if (size == 0) revert OptionsMarket_InvalidSize();
+
+        SeriesState storage state = seriesState[id];
+        if (state.config.underlying == address(0)) revert OptionsMarket_SeriesNotFound(id);
+        if (block.timestamp < state.config.expiry) revert OptionsMarket_InvalidExpiry();
+
+        if (optionToken.balanceOf(msg.sender, uint256(id)) < size) revert OptionsMarket_InvalidSize();
+
+        uint256 positionSize = userPositionSize[id][msg.sender];
+        if (positionSize < size) revert OptionsMarket_InvalidSize();
+
+        uint256 marginReleaseWad = 0;
+        uint256 userLockedMargin = userMarginWad[id][msg.sender];
+        if (userLockedMargin > 0 && positionSize > 0) {
+            marginReleaseWad = (userLockedMargin * size) / positionSize;
+            userMarginWad[id][msg.sender] = userLockedMargin - marginReleaseWad;
+        }
+        userPositionSize[id][msg.sender] = positionSize - size;
+
+        payout = _calculateIntrinsicPayout(state.config, size);
+        uint256 reserve = seriesPremiumReserve[id];
+        if (payout > reserve) {
+            uint256 covered = _requestCoverage(state.config.quote, payout - reserve);
+            reserve += covered;
+            if (payout > reserve) revert OptionsMarket_InsufficientLiquidity();
+        }
+        if (minPayout != 0 && payout < minPayout) {
+            revert OptionsMarket_SlippageExceeded(minPayout, payout);
+        }
+
+        seriesPremiumReserve[id] = reserve - payout;
+        state.longOpenInterest -= uint128(size);
+
+        optionToken.burn(msg.sender, uint256(id), size);
+
+        if (payout > 0) {
+            IERC20(state.config.quote).safeTransfer(msg.sender, payout);
+        }
+
+        if (address(liquidityVault) != address(0)) {
+            liquidityVault.recordLoss(state.config.quote, payout);
+        }
+
+        if (address(collateralManager) != address(0) && marginReleaseWad > 0) {
+            collateralManager.releaseMargin(msg.sender, marginReleaseWad, marginReleaseWad / 2);
+        }
+
+        emit PositionExercised(id, msg.sender, size, payout);
+
+        if (state.longOpenInterest == 0 && !state.settled) {
+            state.settled = true;
+            emit SeriesSettled(id);
+        }
+    }
+
+    function settleSeries(bytes32 id, address residualRecipient)
+        external
+        nonReentrant
+        onlyRole(KEEPER_ROLE)
+        returns (uint256 residual)
+    {
+        SeriesState storage state = seriesState[id];
+        if (state.config.underlying == address(0)) revert OptionsMarket_SeriesNotFound(id);
+        if (block.timestamp < state.config.expiry) revert OptionsMarket_InvalidExpiry();
+        if (state.longOpenInterest != 0) revert OptionsMarket_InvalidSize();
+
+        if (!state.settled) {
+            state.settled = true;
+            emit SeriesSettled(id);
+        }
+
+        residual = seriesPremiumReserve[id];
+        if (residual > 0) {
+            seriesPremiumReserve[id] = 0;
+
+            IERC20 quoteAsset = IERC20(state.config.quote);
+            uint256 vaultShare = 0;
+            uint256 insuranceShare = 0;
+
+            if (address(liquidityVault) != address(0) && vaultSettlementShareBps > 0) {
+                vaultShare = (residual * vaultSettlementShareBps) / 10_000;
+                if (vaultShare > 0) {
+                    quoteAsset.safeTransfer(address(liquidityVault), vaultShare);
+                    liquidityVault.handleSettlementPayout(state.config.quote, vaultShare);
+                }
+            }
+
+            if (address(insuranceFund) != address(0) && insuranceSettlementShareBps > 0) {
+                insuranceShare = (residual * insuranceSettlementShareBps) / 10_000;
+                if (insuranceShare > 0) {
+                    quoteAsset.safeTransfer(address(insuranceFund), insuranceShare);
+                    insuranceFund.notifyPremium(state.config.quote, insuranceShare);
+                }
+            }
+
+            uint256 remainder = residual - vaultShare - insuranceShare;
+            address recipient = residualRecipient != address(0) ? residualRecipient : feeRecipient;
+            if (remainder > 0 && recipient != address(0)) {
+                quoteAsset.safeTransfer(recipient, remainder);
+                emit SeriesResidualSwept(id, recipient, remainder);
+            }
+        }
     }
 
     function _calculateQuote(
@@ -296,6 +618,52 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         } else {
             return strike > spot ? strike - spot : 0;
         }
+    }
+
+    function _calculateIntrinsicPayout(SeriesConfig memory config, uint256 size) internal view returns (uint256) {
+        (uint256 spotRaw, uint8 spotDecimals) = oracleRouter.spot(config.underlying);
+        if (spotRaw == 0) revert OptionsMarket_InvalidSpot();
+
+        uint8 quoteDecimals = IERC20Metadata(config.quote).decimals();
+
+        uint256 spot = _scaleToDecimals(spotRaw, spotDecimals, quoteDecimals);
+        uint256 strike = _fromWadToDecimals(config.strike, quoteDecimals);
+        uint256 intrinsic = _intrinsicValue(config.isCall, spot, strike);
+
+        return (intrinsic * size) / 1e18;
+    }
+
+    function _toWadFromDecimals(uint256 amount, uint8 decimals) internal pure returns (uint256) {
+        if (decimals == 18) return amount;
+        uint256 diff;
+        if (decimals < 18) {
+            diff = 18 - decimals;
+            return amount * (10 ** diff);
+        }
+        diff = uint256(decimals) - 18;
+        if (diff > 36) revert OptionsMarket_InvalidDecimals();
+        return amount / (10 ** diff);
+    }
+
+    function _requestCoverage(address asset, uint256 amount) internal returns (uint256 covered) {
+        if (amount == 0) return 0;
+        if (address(insuranceFund) == address(0)) return 0;
+        covered = insuranceFund.requestCoverage(asset, amount, address(this));
+    }
+
+    function _updateUserMargin(bytes32 id, address account, uint256 size) internal returns (uint256 released) {
+        mapping(address => uint256) storage seriesMargins = userMarginWad[id];
+        mapping(address => uint256) storage seriesPositions = userPositionSize[id];
+        uint256 positionSize = seriesPositions[account];
+        if (positionSize < size) revert OptionsMarket_InvalidSize();
+        if (positionSize > 0) {
+            uint256 locked = seriesMargins[account];
+            if (locked > 0) {
+                released = (locked * size) / positionSize;
+                seriesMargins[account] = locked - released;
+            }
+        }
+        seriesPositions[account] = positionSize - size;
     }
 
     function markSeriesSettled(bytes32 id) internal {

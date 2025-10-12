@@ -9,8 +9,14 @@ describe("OptionsMarketV2", function () {
     const optionToken = await OptionToken.deploy("https://example.com/{id}.json", admin.address);
     await optionToken.waitForDeployment();
 
-    const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
-    const quoteToken = await ERC20Mock.deploy("MockUSDC", "mUSDC", admin.address, ethers.parseUnits("1000000", 6));
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const quoteToken = await MockERC20.deploy(
+      "MockUSDC",
+      "mUSDC",
+      6,
+      ethers.parseUnits("1000000", 6),
+      admin.address
+    );
     await quoteToken.waitForDeployment();
     await quoteToken.mint(trader.address, ethers.parseUnits("10000", 6));
 
@@ -100,5 +106,55 @@ describe("OptionsMarketV2", function () {
     expect(balanceBefore - balanceAfter).to.equal(total);
     expect(feeAfter - feeBefore).to.equal(fee);
     expect(positionBalance).to.equal(size);
+  });
+
+  it("allows closing a position before expiry", async function () {
+    const { market, seriesId, trader, optionToken, quoteToken, feeRecipient } = await deployFixture();
+    const size = ethers.parseUnits("1", 18);
+
+    const [premium, fee] = await market.quote(seriesId, size);
+    const total = premium + fee;
+
+    await quoteToken.connect(trader).approve(await market.getAddress(), total);
+    await market.connect(trader).trade(seriesId, size, total + ethers.parseUnits("1", 6));
+
+    const balanceBefore = await quoteToken.balanceOf(trader.address);
+    const feeBefore = await quoteToken.balanceOf(feeRecipient.address);
+
+    const tx = await market.connect(trader).closePosition(seriesId, size, 0);
+    await expect(tx).to.emit(market, "PositionClosed");
+
+    const balanceAfter = await quoteToken.balanceOf(trader.address);
+    const feeAfter = await quoteToken.balanceOf(feeRecipient.address);
+    const positionBalance = await optionToken.balanceOf(trader.address, BigInt(seriesId));
+
+    expect(positionBalance).to.equal(0n);
+    expect(balanceAfter).to.be.gt(balanceBefore);
+    expect(feeAfter).to.be.gt(feeBefore);
+  });
+
+  it("allows exercising after expiry", async function () {
+    const { market, seriesId, trader, optionToken, quoteToken } = await deployFixture();
+    const size = ethers.parseUnits("1", 18);
+
+    const [premium, fee] = await market.quote(seriesId, size);
+    const total = premium + fee;
+
+    await quoteToken.connect(trader).approve(await market.getAddress(), total);
+    await market.connect(trader).trade(seriesId, size, total + ethers.parseUnits("1", 6));
+
+    await ethers.provider.send("evm_increaseTime", [8 * 24 * 60 * 60]);
+    await ethers.provider.send("evm_mine", []);
+
+    const balanceBefore = await quoteToken.balanceOf(trader.address);
+
+    const tx = await market.connect(trader).exercise(seriesId, size, 0);
+    await expect(tx).to.emit(market, "PositionExercised");
+
+    const balanceAfter = await quoteToken.balanceOf(trader.address);
+    const positionBalance = await optionToken.balanceOf(trader.address, BigInt(seriesId));
+
+    expect(balanceAfter).to.be.gte(balanceBefore);
+    expect(positionBalance).to.equal(0n);
   });
 });

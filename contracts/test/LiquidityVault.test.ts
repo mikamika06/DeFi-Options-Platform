@@ -5,8 +5,14 @@ describe("LiquidityVault", function () {
   it("deposits, enforces cooldown on withdraw", async function () {
     const [admin, lp] = await ethers.getSigners();
 
-    const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
-    const asset = await ERC20Mock.deploy("MockUSDC", "mUSDC", admin.address, ethers.parseUnits("1000000", 6));
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const asset = await MockERC20.deploy(
+      "MockUSDC",
+      "mUSDC",
+      6,
+      ethers.parseUnits("1000000", 6),
+      admin.address
+    );
     await asset.waitForDeployment();
     await asset.mint(lp.address, ethers.parseUnits("1000", 6));
 

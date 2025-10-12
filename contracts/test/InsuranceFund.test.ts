@@ -5,8 +5,8 @@ describe("InsuranceFund", function () {
   it("accepts deposits and withdrawals for approved asset", async function () {
     const [admin, treasury] = await ethers.getSigners();
 
-    const ERC20Mock = await ethers.getContractFactory("ERC20Mock");
-    const usdc = await ERC20Mock.deploy("MockUSDC", "mUSDC", treasury.address, ethers.parseUnits("1000000", 6));
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    const usdc = await MockERC20.deploy("MockUSDC", "mUSDC", 6, ethers.parseUnits("1000000", 6), treasury.address);
     await usdc.waitForDeployment();
 
     const InsuranceFund = await ethers.getContractFactory("InsuranceFund");
