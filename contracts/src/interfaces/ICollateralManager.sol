@@ -14,5 +14,7 @@ interface ICollateralManager {
 
     function evaluateAccount(address account) external returns (uint256 equity, uint256 locked, uint256 maintenance);
 
+    function updateMarginRequirements(address account, uint256 positionValueWad) external;
+
     function resolveLiquidation(address account) external;
 }

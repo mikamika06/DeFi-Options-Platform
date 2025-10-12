@@ -37,6 +37,12 @@ contract LiquidityVault is ERC4626, AccessControl, Pausable {
     uint256 public protocolReserve;
     address public hedgeOperator;
 
+    bytes32 private constant DEFAULT_TRANCHE_SENIOR = keccak256("TRANCHE_SENIOR");
+    bytes32 private constant DEFAULT_TRANCHE_JUNIOR = keccak256("TRANCHE_JUNIOR");
+    uint16 private constant DEFAULT_SENIOR_WEIGHT_BPS = 7000;
+    uint16 private constant DEFAULT_JUNIOR_WEIGHT_BPS = 2000;
+    uint16 private constant MAX_BPS = 10_000;
+
     event PerformanceFeeAccrued(uint256 amount);
     event ManagementFeeAccrued(uint256 amount);
     event TrancheConfigUpdated(uint16 performanceFeeBps, uint16 managementFeeBps, uint32 withdrawalCooldown);
@@ -78,10 +84,17 @@ contract LiquidityVault is ERC4626, AccessControl, Pausable {
         _grantRole(PREMIUM_HANDLER_ROLE, admin);
 
         trancheConfig = config;
+        hedgeReserveBps = 500; // 5% для hedge reserve
+
+        _configureTranche(DEFAULT_TRANCHE_SENIOR, DEFAULT_SENIOR_WEIGHT_BPS);
+        emit TrancheDefined(DEFAULT_TRANCHE_SENIOR, DEFAULT_SENIOR_WEIGHT_BPS);
+
+        _configureTranche(DEFAULT_TRANCHE_JUNIOR, DEFAULT_JUNIOR_WEIGHT_BPS);
+        emit TrancheDefined(DEFAULT_TRANCHE_JUNIOR, DEFAULT_JUNIOR_WEIGHT_BPS);
     }
 
     function setHedgeReserveBps(uint16 newBps) external onlyRole(VAULT_MANAGER_ROLE) {
-        require(newBps <= 10_000, "hedge fee too high");
+        require(newBps <= MAX_BPS, "hedge fee too high");
         hedgeReserveBps = newBps;
         emit HedgeReserveUpdated(newBps);
     }
@@ -161,21 +174,7 @@ contract LiquidityVault is ERC4626, AccessControl, Pausable {
     }
 
     function defineTranche(bytes32 trancheId, uint16 weightBps) external onlyRole(VAULT_MANAGER_ROLE) {
-        if (trancheId == bytes32(0)) revert LiquidityVault_InvalidTranche();
-        if (weightBps > 10_000) revert LiquidityVault_InvalidWeight();
-
-        TrancheShare storage tranche = trancheShares[trancheId];
-        if (!tranche.exists) {
-            tranche.exists = true;
-            trancheIds.push(trancheId);
-        } else {
-            totalTrancheWeightBps -= tranche.weightBps;
-        }
-
-        tranche.weightBps = weightBps;
-        totalTrancheWeightBps += weightBps;
-        if (totalTrancheWeightBps > 10_000) revert LiquidityVault_InvalidWeight();
-
+        _configureTranche(trancheId, weightBps);
         emit TrancheDefined(trancheId, weightBps);
     }
 
@@ -293,6 +292,23 @@ contract LiquidityVault is ERC4626, AccessControl, Pausable {
 
     function getTrancheIds() external view returns (bytes32[] memory) {
         return trancheIds;
+    }
+
+    function _configureTranche(bytes32 trancheId, uint16 weightBps) internal {
+        if (trancheId == bytes32(0)) revert LiquidityVault_InvalidTranche();
+        if (weightBps > MAX_BPS) revert LiquidityVault_InvalidWeight();
+
+        TrancheShare storage tranche = trancheShares[trancheId];
+        if (!tranche.exists) {
+            tranche.exists = true;
+            trancheIds.push(trancheId);
+        } else {
+            totalTrancheWeightBps -= tranche.weightBps;
+        }
+
+        tranche.weightBps = weightBps;
+        totalTrancheWeightBps += weightBps;
+        if (totalTrancheWeightBps > MAX_BPS) revert LiquidityVault_InvalidWeight();
     }
 
     function _checkCooldown(address owner) internal view {

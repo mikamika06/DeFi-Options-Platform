@@ -8,6 +8,7 @@ contract MockCollateralManager is ICollateralManager {
     mapping(address => uint256) public lockedMargin;
     mapping(address => uint256) public maintenanceMargin;
     mapping(address => bool) public liquidationStatus;
+    mapping(address => uint256) public exposureWad;
 
     function deposit(address account, address asset, uint256 amount) external override {
         balances[account][asset] += amount;
@@ -47,5 +48,10 @@ contract MockCollateralManager is ICollateralManager {
 
     function resolveLiquidation(address account) external override {
         liquidationStatus[account] = false;
+    }
+
+    function updateMarginRequirements(address account, uint256 positionValueWad) external override {
+        exposureWad[account] = positionValueWad;
+        maintenanceMargin[account] = positionValueWad / 2;
     }
 }

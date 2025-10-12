@@ -40,11 +40,17 @@ contract CollateralManager is AccessControl, Pausable, ICollateralManager {
         uint64 lastMarginCall;
     }
 
-    mapping(address => mapping(address => uint256)) private accountBalances;
-    mapping(address => uint256) public maintenanceMarginRequirement;
-    mapping(address => uint256) public lockedMarginRequirement; // 1e18 precision
-    mapping(address => AccountStatus) private accountStatus;
-    mapping(address => bool) public liquidatableMarket;
+mapping(address => mapping(address => uint256)) private accountBalances;
+mapping(address => uint256) public maintenanceMarginRequirement;
+mapping(address => uint256) public lockedMarginRequirement; // 1e18 precision
+mapping(address => AccountStatus) private accountStatus;
+mapping(address => bool) public liquidatableMarket;
+mapping(address => uint256) public accountExposureWad;
+mapping(address => uint256) public computedInitialMargin;
+
+uint16 public initialMarginBps = 15_000; // 150%
+uint16 public maintenanceMarginBps = 12_000; // 120%
+uint32 public marginCallGracePeriod = 1 hours;
 
     event AssetConfigUpdated(
         address indexed asset,
@@ -83,6 +89,17 @@ contract CollateralManager is AccessControl, Pausable, ICollateralManager {
         _grantRole(MARGIN_ADMIN_ROLE, admin);
         _grantRole(LIQUIDATOR_ROLE, admin);
         _grantRole(MARGIN_ENGINE_ROLE, admin);
+    }
+
+    function setMarginParameters(uint16 initialBps, uint16 maintenanceBps, uint32 gracePeriod)
+        external
+        onlyRole(MARGIN_ADMIN_ROLE)
+    {
+        require(initialBps >= maintenanceBps, "init < maint");
+        require(initialBps <= 50_000 && maintenanceBps <= 50_000, "bps too high");
+        initialMarginBps = initialBps;
+        maintenanceMarginBps = maintenanceBps;
+        marginCallGracePeriod = gracePeriod;
     }
 
     function setLiquidatableMarket(address market, bool approved) external onlyRole(MARGIN_ADMIN_ROLE) {
@@ -232,16 +249,33 @@ contract CollateralManager is AccessControl, Pausable, ICollateralManager {
         equity = _computeEquity(account);
         locked = lockedMarginRequirement[account];
         maintenance = maintenanceMarginRequirement[account];
+        uint256 requiredInitial = computedInitialMargin[account];
 
         AccountStatus storage status = accountStatus[account];
-        if (!status.inLiquidation && equity < maintenance) {
-            status.lastMarginCall = uint64(block.timestamp);
-            emit MarginCallIssued(account, equity, maintenance);
-            if (equity < locked) {
-                status.inLiquidation = true;
-                emit LiquidationStarted(account, equity, maintenance);
+        uint64 currentTime = uint64(block.timestamp);
+
+        bool belowMaintenance = equity < maintenance;
+        bool belowInitial = locked < requiredInitial;
+
+        if (!status.inLiquidation) {
+            if (belowMaintenance || belowInitial) {
+                if (status.lastMarginCall == 0) {
+                    status.lastMarginCall = currentTime;
+                    emit MarginCallIssued(account, equity, maintenance);
+                } else if (currentTime > status.lastMarginCall + marginCallGracePeriod) {
+                    status.inLiquidation = true;
+                    emit LiquidationStarted(account, equity, maintenance);
+                }
+            } else if (status.lastMarginCall != 0) {
+                status.lastMarginCall = 0;
             }
+        } else if (!belowMaintenance && !belowInitial) {
+            status.inLiquidation = false;
+            status.lastMarginCall = 0;
+            emit LiquidationResolved(account);
         }
+
+        return (equity, locked, maintenance);
     }
 
     function resolveLiquidation(address account)
@@ -267,6 +301,19 @@ contract CollateralManager is AccessControl, Pausable, ICollateralManager {
         if (!status.inLiquidation) revert CollateralManager_NotInLiquidation();
         (uint256 payout,) = IOptionsLiquidation(market).liquidatePosition(seriesId, account, size, payoutRecipient);
         emit LiquidationExecuted(market, seriesId, account, size, payout);
+    }
+
+    function updateMarginRequirements(address account, uint256 positionValueWad)
+        external
+        override
+    {
+        if (!(liquidatableMarket[msg.sender] || hasRole(MARGIN_ENGINE_ROLE, msg.sender))) {
+            revert CollateralManager_MarketNotApproved();
+        }
+
+        accountExposureWad[account] = positionValueWad;
+        computedInitialMargin[account] = (positionValueWad * initialMarginBps) / 10_000;
+        maintenanceMarginRequirement[account] = (positionValueWad * maintenanceMarginBps) / 10_000;
     }
 
     function balanceOf(address account, address asset) external view returns (uint256) {

@@ -72,11 +72,14 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
     uint16 public vaultSettlementShareBps;
     uint16 public insuranceSettlementShareBps;
 
-    mapping(bytes32 => SeriesState) internal seriesState;
-    bytes32[] internal seriesIds;
-    mapping(bytes32 => uint256) internal seriesPremiumReserve;
-    mapping(bytes32 => mapping(address => uint256)) internal userMarginWad;
-    mapping(bytes32 => mapping(address => uint256)) internal userPositionSize;
+mapping(bytes32 => SeriesState) internal seriesState;
+bytes32[] internal seriesIds;
+mapping(bytes32 => uint256) internal seriesPremiumReserve;
+mapping(bytes32 => mapping(address => uint256)) internal userMarginWad;
+mapping(bytes32 => mapping(address => uint256)) internal userPositionSize;
+mapping(address => uint256) public accountMarginExposure;
+mapping(bytes32 => mapping(address => uint256)) internal writerShortPositions;
+mapping(bytes32 => mapping(address => uint256)) internal writerMarginWad;
 
     event SeriesCreated(
         bytes32 indexed id,
@@ -108,15 +111,17 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         uint256 payout,
         uint256 fee
     );
-    event PositionExercised(bytes32 indexed id, address indexed trader, uint256 size, uint256 payout);
-    event SeriesResidualSwept(bytes32 indexed id, address indexed recipient, uint256 amount);
-    event PositionLiquidated(
-        bytes32 indexed id,
-        address indexed account,
-        address indexed initiator,
-        uint256 size,
-        uint256 payout
-    );
+event PositionExercised(bytes32 indexed id, address indexed trader, uint256 size, uint256 payout);
+event SeriesResidualSwept(bytes32 indexed id, address indexed recipient, uint256 amount);
+event PositionLiquidated(
+    bytes32 indexed id,
+    address indexed account,
+    address indexed initiator,
+    uint256 size,
+    uint256 payout
+);
+event ShortOpened(bytes32 indexed id, address indexed writer, address indexed recipient, uint256 size, uint256 marginWad);
+event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint256 marginReleasedWad);
 
     enum CloseMode {
         Standard,
@@ -323,6 +328,8 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
             uint256 marginWad = _toWadFromDecimals(netPremium, quoteDecimals);
             collateralManager.lockMargin(msg.sender, marginWad, marginWad / 2);
             userMarginWad[id][msg.sender] += marginWad;
+            accountMarginExposure[msg.sender] += marginWad;
+            collateralManager.updateMarginRequirements(msg.sender, accountMarginExposure[msg.sender]);
         }
 
         userPositionSize[id][msg.sender] += size;
@@ -381,6 +388,81 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
         );
     }
 
+    function openShort(bytes32 id, uint256 size, address recipient)
+        external
+        nonReentrant
+        whenNotPaused
+        returns (uint256 marginWad)
+    {
+        if (size == 0) revert OptionsMarket_InvalidSize();
+        if (recipient == address(0)) revert OptionsMarket_InvalidAddress();
+
+        SeriesState storage state = seriesState[id];
+        if (state.config.underlying == address(0)) revert OptionsMarket_SeriesNotFound(id);
+        if (state.settled) revert OptionsMarket_SeriesSettled(id);
+        if (block.timestamp >= state.config.expiry) revert OptionsMarket_PastExpiry(id);
+
+        (uint256 premium, ) = _calculateQuote(state.config, id, size);
+        uint8 quoteDecimals = IERC20Metadata(state.config.quote).decimals();
+        marginWad = _toWadFromDecimals(premium, quoteDecimals);
+
+        writerShortPositions[id][msg.sender] += size;
+        writerMarginWad[id][msg.sender] += marginWad;
+        accountMarginExposure[msg.sender] += marginWad;
+
+        if (address(collateralManager) != address(0)) {
+            collateralManager.lockMargin(msg.sender, marginWad, marginWad / 2);
+            collateralManager.updateMarginRequirements(msg.sender, accountMarginExposure[msg.sender]);
+        }
+
+        state.shortOpenInterest += uint128(size);
+        optionToken.mint(recipient, uint256(id), size, "");
+
+        emit ShortOpened(id, msg.sender, recipient, size, marginWad);
+    }
+
+    function closeShort(bytes32 id, uint256 size)
+        external
+        nonReentrant
+        whenNotPaused
+        returns (uint256 marginReleasedWad)
+    {
+        if (size == 0) revert OptionsMarket_InvalidSize();
+
+        SeriesState storage state = seriesState[id];
+        if (state.config.underlying == address(0)) revert OptionsMarket_SeriesNotFound(id);
+        if (state.settled) revert OptionsMarket_SeriesSettled(id);
+
+        uint256 currentShort = writerShortPositions[id][msg.sender];
+        if (currentShort < size) revert OptionsMarket_InvalidSize();
+        if (optionToken.balanceOf(msg.sender, uint256(id)) < size) revert OptionsMarket_InvalidSize();
+
+        writerShortPositions[id][msg.sender] = currentShort - size;
+        require(state.shortOpenInterest >= uint128(size), "short OI too low");
+        uint256 currentMargin = writerMarginWad[id][msg.sender];
+        marginReleasedWad = currentMargin > 0 && currentShort > 0
+            ? (currentMargin * size) / currentShort
+            : 0;
+        writerMarginWad[id][msg.sender] = currentMargin > marginReleasedWad ? currentMargin - marginReleasedWad : 0;
+
+        if (marginReleasedWad > 0) {
+            uint256 exposure = accountMarginExposure[msg.sender];
+            accountMarginExposure[msg.sender] = exposure > marginReleasedWad ? exposure - marginReleasedWad : 0;
+        }
+
+        if (address(collateralManager) != address(0)) {
+            if (marginReleasedWad > 0) {
+                collateralManager.releaseMargin(msg.sender, marginReleasedWad, marginReleasedWad / 2);
+            }
+            collateralManager.updateMarginRequirements(msg.sender, accountMarginExposure[msg.sender]);
+        }
+
+        state.shortOpenInterest -= uint128(size);
+        optionToken.burn(msg.sender, uint256(id), size);
+
+        emit ShortClosed(id, msg.sender, size, marginReleasedWad);
+    }
+
     function _closePositionInternal(
         bytes32 id,
         address account,
@@ -430,8 +512,18 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
             liquidityVault.recordLoss(state.config.quote, ctx.premium);
         }
 
-        if (address(collateralManager) != address(0) && ctx.marginReleaseWad > 0) {
-            collateralManager.releaseMargin(account, ctx.marginReleaseWad, ctx.marginReleaseWad / 2);
+        if (ctx.marginReleaseWad > 0) {
+            uint256 currentExposure = accountMarginExposure[account];
+            accountMarginExposure[account] = currentExposure > ctx.marginReleaseWad
+                ? currentExposure - ctx.marginReleaseWad
+                : 0;
+        }
+
+        if (address(collateralManager) != address(0)) {
+            if (ctx.marginReleaseWad > 0) {
+                collateralManager.releaseMargin(account, ctx.marginReleaseWad, ctx.marginReleaseWad / 2);
+            }
+            collateralManager.updateMarginRequirements(account, accountMarginExposure[account]);
         }
 
         if (mode == CloseMode.Standard) {
@@ -457,16 +549,13 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
 
         if (optionToken.balanceOf(msg.sender, uint256(id)) < size) revert OptionsMarket_InvalidSize();
 
-        uint256 positionSize = userPositionSize[id][msg.sender];
-        if (positionSize < size) revert OptionsMarket_InvalidSize();
-
-        uint256 marginReleaseWad = 0;
-        uint256 userLockedMargin = userMarginWad[id][msg.sender];
-        if (userLockedMargin > 0 && positionSize > 0) {
-            marginReleaseWad = (userLockedMargin * size) / positionSize;
-            userMarginWad[id][msg.sender] = userLockedMargin - marginReleaseWad;
+        uint256 marginReleaseWad = _updateUserMargin(id, msg.sender, size);
+        if (marginReleaseWad > 0) {
+            uint256 exposure = accountMarginExposure[msg.sender];
+            accountMarginExposure[msg.sender] = exposure > marginReleaseWad
+                ? exposure - marginReleaseWad
+                : 0;
         }
-        userPositionSize[id][msg.sender] = positionSize - size;
 
         payout = _calculateIntrinsicPayout(state.config, size);
         uint256 reserve = seriesPremiumReserve[id];
@@ -492,8 +581,11 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
             liquidityVault.recordLoss(state.config.quote, payout);
         }
 
-        if (address(collateralManager) != address(0) && marginReleaseWad > 0) {
-            collateralManager.releaseMargin(msg.sender, marginReleaseWad, marginReleaseWad / 2);
+        if (address(collateralManager) != address(0)) {
+            if (marginReleaseWad > 0) {
+                collateralManager.releaseMargin(msg.sender, marginReleaseWad, marginReleaseWad / 2);
+            }
+            collateralManager.updateMarginRequirements(msg.sender, accountMarginExposure[msg.sender]);
         }
 
         emit PositionExercised(id, msg.sender, size, payout);
