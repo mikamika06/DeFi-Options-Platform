@@ -22,4 +22,16 @@ contract OptionsMarketHarness is OptionsMarketV2 {
     function settleSeries(bytes32 id) external onlyRole(KEEPER_ROLE) {
         markSeriesSettled(id);
     }
+
+    function forceSetSeriesReserve(bytes32 id, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        seriesPremiumReserve[id] = amount;
+    }
+
+    function getSeriesReserve(bytes32 id) external view returns (uint256) {
+        return seriesPremiumReserve[id];
+    }
+
+    function getUserMargin(bytes32 id, address account) external view returns (uint256) {
+        return userMarginWad[id][account];
+    }
 }
