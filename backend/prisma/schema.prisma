@@ -69,6 +69,9 @@ model Series {
   settlements     Settlement?
   riskSnapshots   RiskSnapshot[]
   ivNodes         IVNode[]
+  marginEvents    MarginEvent[]
+  liquidations    Liquidation[]
+  insuranceFlows  InsuranceFlow[]
 
   @@index([underlyingAssetId, optionType, expiry])
   @@index([quoteAssetId])
@@ -163,6 +166,7 @@ model Pool {
   asset      Asset    @relation(fields: [assetId], references: [id])
   lpShares   LPShare[]
   metrics    PoolMetric?
+  insuranceFlows InsuranceFlow[]
 }
 
 model PoolMetric {

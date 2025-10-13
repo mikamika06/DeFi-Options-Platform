@@ -20,12 +20,12 @@ fi
 BACKEND_FILTER="@defi-options/backend"
 
 echo "[init_db] Generating Prisma client..."
-pnpm --filter "${BACKEND_FILTER}" exec prisma generate
+pnpm --filter "${BACKEND_FILTER}" run prisma:generate
 
 echo "[init_db] Applying Prisma migrations..."
-pnpm --filter "${BACKEND_FILTER}" exec prisma migrate deploy
+pnpm --filter "${BACKEND_FILTER}" run prisma:deploy
 
 echo "[init_db] Seeding baseline data..."
-pnpm --filter "${BACKEND_FILTER}" exec prisma db seed
+pnpm --filter "${BACKEND_FILTER}" run db:seed
 
 echo "[init_db] Done."

@@ -11,6 +11,6 @@
     "outDir": "dist",
     "types": ["node"]
   },
-  "include": ["api/src/**/*.ts"],
+  "include": ["api/src/**/*", "workers/**/*.ts", "types/**/*.d.ts"],
   "exclude": ["dist"]
 }
