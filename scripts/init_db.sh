@@ -12,12 +12,20 @@ else
   export $(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' "${ROOT_DIR}/.env.example" | xargs)
 fi
 
-PSQL="psql postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}"
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "[init_db] pnpm is required but not found in PATH"
+  exit 1
+fi
 
-echo "[init_db] Applying schema migrations..."
-${PSQL} -f "${ROOT_DIR}/scripts/sql/init_schema.sql"
+BACKEND_FILTER="@defi-options/backend"
 
-echo "[init_db] Seeding reference data..."
-${PSQL} -f "${ROOT_DIR}/scripts/sql/seed_reference.sql"
+echo "[init_db] Generating Prisma client..."
+pnpm --filter "${BACKEND_FILTER}" exec prisma generate
+
+echo "[init_db] Applying Prisma migrations..."
+pnpm --filter "${BACKEND_FILTER}" exec prisma migrate deploy
+
+echo "[init_db] Seeding baseline data..."
+pnpm --filter "${BACKEND_FILTER}" exec prisma db seed
 
 echo "[init_db] Done."
