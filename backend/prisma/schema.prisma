@@ -1,0 +1,281 @@
+// Prisma schema capturing the core data model for the DeFi Options Platform.
+// Values like premiums/sizes are stored as 1e18 scaled integers (BigInt).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OptionType {
+  CALL
+  PUT
+}
+
+enum TradeSide {
+  BUY
+  SELL
+}
+
+enum PositionType {
+  LONG
+  SHORT
+}
+
+enum RiskAlertLevel {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+model Asset {
+  id        String   @id @db.VarChar(64) // typically on-chain address
+  symbol    String   @db.VarChar(32)
+  decimals  Int
+  metadata  Json?    // optional metadata (coingecko ids, logo urls, etc.)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  seriesAsUnderlying Series[] @relation("SeriesUnderlyingAsset")
+  seriesAsQuote      Series[] @relation("SeriesQuoteAsset")
+  pools              Pool[]
+}
+
+model Series {
+  id               String   @id // bytes32 hex string from keccak256
+  underlyingAssetId String
+  quoteAssetId     String
+  optionType       OptionType
+  strikeWad        Decimal  @db.Decimal(78, 0)
+  expiry           DateTime
+  baseFeeBps       Int
+  isSettled        Boolean  @default(false)
+  longOpenInterest BigInt   @default(0)
+  shortOpenInterest BigInt  @default(0)
+  totalPremiumWad  BigInt   @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  lastIvUpdateAt   DateTime?
+
+  underlyingAsset Asset @relation("SeriesUnderlyingAsset", fields: [underlyingAssetId], references: [id])
+  quoteAsset      Asset @relation("SeriesQuoteAsset", fields: [quoteAssetId], references: [id])
+  metric          SeriesMetric?
+  quotes          Quote[]
+  trades          Trade[]
+  positions       Position[]
+  settlements     Settlement?
+  riskSnapshots   RiskSnapshot[]
+  ivNodes         IVNode[]
+
+  @@index([underlyingAssetId, optionType, expiry])
+  @@index([quoteAssetId])
+}
+
+model SeriesMetric {
+  seriesId         String   @id
+  markIv           Decimal? @db.Decimal(36, 18)
+  markDelta        Decimal? @db.Decimal(36, 18)
+  markGamma        Decimal? @db.Decimal(36, 18)
+  markVega         Decimal? @db.Decimal(36, 18)
+  markTheta        Decimal? @db.Decimal(36, 18)
+  markRho          Decimal? @db.Decimal(36, 18)
+  lastQuoteAt      DateTime?
+  lastTradeAt      DateTime?
+  oiLong           BigInt   @default(0)
+  oiShort          BigInt   @default(0)
+  openInterestUsd  Decimal? @db.Decimal(78, 0)
+  utilizationRatio Decimal? @db.Decimal(36, 18)
+  updatedAt        DateTime @updatedAt
+
+  series Series @relation(fields: [seriesId], references: [id])
+}
+
+model Quote {
+  id        String   @id @default(cuid())
+  seriesId  String
+  sizeWad   BigInt
+  premiumBidWad BigInt
+  premiumAskWad BigInt
+  feeBidWad BigInt
+  feeAskWad BigInt
+  iv        Decimal? @db.Decimal(36, 18)
+  delta     Decimal? @db.Decimal(36, 18)
+  gamma     Decimal? @db.Decimal(36, 18)
+  theta     Decimal? @db.Decimal(36, 18)
+  vega      Decimal? @db.Decimal(36, 18)
+  rho       Decimal? @db.Decimal(36, 18)
+  timestamp DateTime @default(now())
+
+  series Series @relation(fields: [seriesId], references: [id])
+
+  @@index([seriesId, timestamp])
+}
+
+model Trade {
+  id           String    @id @default(cuid())
+  seriesId     String
+  userAddress  String    @db.VarChar(64)
+  side         TradeSide
+  sizeWad      BigInt
+  premiumWad   BigInt
+  feeWad       BigInt
+  txHash       String    @db.VarChar(66)
+  blockNumber  BigInt
+  timestamp    DateTime  @default(now())
+
+  series Series @relation(fields: [seriesId], references: [id])
+
+  @@index([userAddress])
+  @@index([seriesId, timestamp])
+  @@index([txHash], map: "trades_tx_hash_idx")
+}
+
+model Position {
+  id           String       @id @default(cuid())
+  userAddress  String       @db.VarChar(64)
+  seriesId     String
+  positionType PositionType
+  sizeWad      BigInt       @default(0)
+  avgPriceWad  BigInt       @default(0)
+  pnlUnrealizedWad BigInt   @default(0)
+  pnlRealizedWad   BigInt   @default(0)
+  lastUpdated  DateTime     @default(now())
+
+  series Series @relation(fields: [seriesId], references: [id])
+
+  @@unique([userAddress, seriesId, positionType])
+  @@index([seriesId])
+}
+
+model Pool {
+  id         String   @id @db.VarChar(64) // contract address
+  assetId    String
+  tvlWad     BigInt   @default(0)
+  utilization Decimal? @db.Decimal(36, 18)
+  apy        Decimal? @db.Decimal(36, 18)
+  totalShares BigInt  @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  asset      Asset    @relation(fields: [assetId], references: [id])
+  lpShares   LPShare[]
+  metrics    PoolMetric?
+}
+
+model PoolMetric {
+  poolId        String   @id
+  hedgeReserveWad BigInt @default(0)
+  protocolFeesWad BigInt @default(0)
+  lastRebalanceAt DateTime?
+  updatedAt      DateTime @updatedAt
+
+  pool Pool @relation(fields: [poolId], references: [id])
+}
+
+model LPShare {
+  id          String   @id @default(cuid())
+  poolId      String
+  userAddress String   @db.VarChar(64)
+  shares      BigInt   @default(0)
+  entryTvlWad BigInt   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  pool Pool @relation(fields: [poolId], references: [id])
+
+  @@unique([poolId, userAddress])
+}
+
+model RiskSnapshot {
+  id             String         @id @default(cuid())
+  seriesId       String?
+  userAddress    String         @db.VarChar(64)
+  netDelta       Decimal?       @db.Decimal(36, 18)
+  netGamma       Decimal?       @db.Decimal(36, 18)
+  netVega        Decimal?       @db.Decimal(36, 18)
+  marginRequiredWad BigInt?
+  marginAvailableWad BigInt?
+  liquidationPrice Decimal?     @db.Decimal(36, 18)
+  alertLevel     RiskAlertLevel @default(INFO)
+  timestamp      DateTime       @default(now())
+
+  series Series? @relation(fields: [seriesId], references: [id])
+
+  @@index([userAddress, timestamp])
+}
+
+model MarginEvent {
+  id             String    @id @default(cuid())
+  userAddress    String    @db.VarChar(64)
+  seriesId       String?
+  eventType      String    @db.VarChar(32)
+  deltaWad       BigInt
+  resultingMarginWad BigInt
+  metadata       Json?
+  timestamp      DateTime  @default(now())
+
+  series Series? @relation(fields: [seriesId], references: [id])
+
+  @@index([userAddress, timestamp])
+}
+
+model Settlement {
+  id              String   @id @default(cuid())
+  seriesId        String   @unique
+  settlementPriceWad BigInt
+  payoutTotalWad  BigInt
+  residualPremiumWad BigInt
+  executedBy      String   @db.VarChar(64)
+  executedAt      DateTime @default(now())
+
+  series Series @relation(fields: [seriesId], references: [id])
+}
+
+model Liquidation {
+  id                String   @id @default(cuid())
+  seriesId          String?
+  liquidatedUser    String   @db.VarChar(64)
+  initiator         String   @db.VarChar(64)
+  sizeClosedWad     BigInt
+  payoutWad         BigInt
+  penaltyWad        BigInt
+  blockNumber       BigInt
+  timestamp         DateTime @default(now())
+  txHash            String   @db.VarChar(66)
+
+  series Series? @relation(fields: [seriesId], references: [id])
+
+  @@index([liquidatedUser, timestamp])
+}
+
+model InsuranceFlow {
+  id           String   @id @default(cuid())
+  source       String   @db.VarChar(32)
+  amountWad    BigInt
+  seriesId     String?
+  poolId       String?
+  txHash       String?  @db.VarChar(66)
+  note         String?
+  timestamp    DateTime @default(now())
+
+  series Series? @relation(fields: [seriesId], references: [id])
+  pool   Pool?   @relation(fields: [poolId], references: [id])
+
+  @@index([timestamp])
+}
+
+model IVNode {
+  id         String   @id @default(cuid())
+  seriesId   String
+  moneyness  Decimal  @db.Decimal(36, 18)
+  iv         Decimal  @db.Decimal(36, 18)
+  source     String   @db.VarChar(32)
+  createdAt  DateTime @default(now())
+
+  series Series @relation(fields: [seriesId], references: [id])
+
+  @@index([seriesId, createdAt])
+}

@@ -16,34 +16,34 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200
-      }
-    }
+        runs: 200,
+      },
+    },
   },
   networks: {
     hardhat: {},
     anvil: {
       url: ANVIL_RPC_URL,
       chainId: Number(process.env.CHAIN_ID || 31337),
-      accounts: [DEPLOYER_PRIVATE_KEY]
-    }
+      accounts: [DEPLOYER_PRIVATE_KEY],
+    },
   },
   paths: {
     sources: "src",
     tests: "test",
     cache: "cache",
-    artifacts: "artifacts"
+    artifacts: "artifacts",
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS === "true",
     currency: "USD",
     coinmarketcap: process.env.COINMARKETCAP_API_KEY || "",
-    token: "ETH"
+    token: "ETH",
   },
   typechain: {
     outDir: "types",
-    target: "ethers-v6"
-  }
+    target: "ethers-v6",
+  },
 };
 
 export default config;

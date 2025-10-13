@@ -8,11 +8,15 @@
     "test": "hardhat test",
     "coverage": "hardhat coverage",
     "lint": "solhint 'src/**/*.sol'",
-    "fmt": "prettier --write 'src/**/*.sol'"
+    "fmt": "prettier --write 'src/**/*.sol'",
+    "deploy:local": "hardhat run script/deployLocal.ts --network localhost",
+    "seed:local": "hardhat run script/seedLocal.ts --network localhost"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-ethers": "^3.1.0",
     "@nomicfoundation/hardhat-toolbox": "^3.0.0",
+    "@nomiclabs/hardhat-ethers": "^2.2.3",
+    "@nomiclabs/hardhat-waffle": "^2.0.6",
     "@typechain/ethers-v6": "^0.5.1",
     "@typechain/hardhat": "^9.1.0",
     "@types/node": "^24.7.2",
