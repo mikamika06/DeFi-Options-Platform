@@ -13,7 +13,7 @@ async function buildServer() {
   app.register(mercurius, {
     schema: typeDefs,
     resolvers,
-    context: createContext,
+    context: (request) => createContext(request),
     graphiql: true
   });
 

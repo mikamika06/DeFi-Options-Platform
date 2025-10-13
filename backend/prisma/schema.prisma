@@ -283,3 +283,9 @@ model IVNode {
 
   @@index([seriesId, createdAt])
 }
+
+model IndexerState {
+  id         String   @id
+  lastBlock  Int
+  updatedAt  DateTime @updatedAt
+}

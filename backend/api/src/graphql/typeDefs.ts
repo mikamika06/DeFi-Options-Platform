@@ -209,6 +209,25 @@ export const typeDefs = /* GraphQL */ `
     residualRecipient: String
   }
 
+  input LiquidationInput {
+    seriesId: String!
+    account: String!
+    size: String!
+    receiver: String
+  }
+
+  input MarginCheckInput {
+    account: String!
+    seriesId: String
+    size: String
+    receiver: String
+  }
+
+  input IvUpdateInput {
+    seriesId: String!
+    ivWad: String!
+  }
+
   type TradeConnection {
     items: [Trade!]!
     nextCursor: String
@@ -244,5 +263,14 @@ export const typeDefs = /* GraphQL */ `
     createSeriesCalldata(input: CreateSeriesInput!): String!
     settleSeriesCalldata(input: SettleSeriesInput!): String!
     enqueueRiskSnapshot(userAddress: String!): String!
+    settleSeriesExecute(seriesId: String!, residualRecipient: String): String!
+    enqueueSettlement(seriesId: String!, residualRecipient: String): String!
+    liquidatePositionExecute(input: LiquidationInput!): String!
+    enqueueLiquidation(input: LiquidationInput!): String!
+    enqueueMarginCheck(input: MarginCheckInput!): String!
+    ivUpdateCalldata(input: IvUpdateInput!): String!
+    ivUpdateExecute(input: IvUpdateInput!): String!
+    enqueueIvUpdate(input: IvUpdateInput!): String!
+    enqueueGreeks(seriesId: String!): String!
   }
 `;

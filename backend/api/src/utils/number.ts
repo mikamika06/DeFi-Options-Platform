@@ -13,3 +13,11 @@ export function toStringSafe(value: unknown): string {
   }
   return String(value);
 }
+
+export function parseBigIntStrict(value: string, field: string): bigint {
+  try {
+    return BigInt(value);
+  } catch {
+    throw new Error(`${field} must be bigint-compatible string`);
+  }
+}

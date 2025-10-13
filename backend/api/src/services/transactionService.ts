@@ -129,3 +129,9 @@ export function buildSettleSeriesCalldata(
   const recipient = residualRecipient ? normalizeAddress(residualRecipient) : ZERO_ADDRESS;
   return ctx.sdk.optionsMarket.interface.encodeFunctionData("settleSeries", [normalizedId, recipient]);
 }
+
+export function buildIvUpdateCalldata(ctx: GraphQLContext, seriesId: string, ivWad: string): string {
+  const normalizedId = normalizeSeriesId(seriesId);
+  const iv = parseBigInt(ivWad, "iv");
+  return ctx.sdk.ivOracle.interface.encodeFunctionData("setIV", [normalizedId, iv]);
+}

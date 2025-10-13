@@ -10,7 +10,14 @@
     "prisma:deploy": "node prisma/run-with-env.js prisma migrate deploy",
     "prisma:dev": "node prisma/run-with-env.js prisma migrate dev",
     "db:seed": "node prisma/run-with-env.js prisma db seed",
-    "worker:risk": "NODE_ENV=${NODE_ENV:-development} tsx workers/risk-engine.ts"
+    "worker:risk": "NODE_ENV=${NODE_ENV:-development} tsx workers/risk-engine.ts",
+    "worker:settlement": "NODE_ENV=${NODE_ENV:-development} tsx workers/settlement-worker.ts",
+    "worker:liquidation": "NODE_ENV=${NODE_ENV:-development} tsx workers/liquidation-worker.ts",
+    "worker:margin": "NODE_ENV=${NODE_ENV:-development} tsx workers/margin-worker.ts",
+    "worker:iv": "NODE_ENV=${NODE_ENV:-development} tsx workers/iv-publisher.ts",
+    "worker:greeks": "NODE_ENV=${NODE_ENV:-development} tsx workers/greeks-worker.ts",
+    "worker:settlement-scheduler": "NODE_ENV=${NODE_ENV:-development} tsx workers/settlement-scheduler.ts",
+    "worker:indexer": "NODE_ENV=${NODE_ENV:-development} tsx workers/event-indexer.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.17.0",
