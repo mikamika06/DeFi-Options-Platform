@@ -10,6 +10,8 @@
     "prisma:deploy": "node prisma/run-with-env.js prisma migrate deploy",
     "prisma:dev": "node prisma/run-with-env.js prisma migrate dev",
     "db:seed": "node prisma/run-with-env.js prisma db seed",
+    "workers:all": "run-p worker:*",
+    "workers:start": "./start-all-workers.sh",
     "worker:risk": "NODE_ENV=${NODE_ENV:-development} tsx workers/risk-engine.ts",
     "worker:settlement": "NODE_ENV=${NODE_ENV:-development} tsx workers/settlement-worker.ts",
     "worker:liquidation": "NODE_ENV=${NODE_ENV:-development} tsx workers/liquidation-worker.ts",
@@ -32,6 +34,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.19",
+    "npm-run-all": "^4.1.5",
     "prisma": "^5.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.9.3"

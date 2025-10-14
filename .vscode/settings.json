@@ -34,8 +34,8 @@
   ],
   "typescript.tsdk": "node_modules/typescript/lib",
   "editor.codeActionsOnSave": {
-    "source.fixAll.eslint": true
-  },
+    "source.fixAll.eslint": "explicit"
+},
   "files.exclude": {
     "**/.DS_Store": true,
     "**/node_modules": false
