@@ -90,7 +90,9 @@ async function main() {
   const seriesId = await market.computeSeriesId(seriesConfig);
   const tx = await market.connect(admin).createSeries(seriesConfig);
   await tx.wait();
-  await ivOracle.setIV(seriesId, ethers.parseUnits("0.4", 18));
+  const ivTx = await ivOracle.setIV(seriesId, ethers.parseUnits("0.4", 18));
+  await ivTx.wait();
+  console.log("   IV after set:", (await ivOracle.iv(seriesId)).toString());
 
   const tradeSize = ethers.parseUnits("5", 18);
   const [premium, fee] = await market.quote(seriesId, tradeSize);

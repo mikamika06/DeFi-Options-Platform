@@ -91,6 +91,143 @@ export function buildCloseShortCalldata(ctx: GraphQLContext, seriesId: string, s
   return ctx.sdk.optionsMarket.interface.encodeFunctionData("closeShort", [normalizedId, sizeBigInt]);
 }
 
+type CollateralIoInput = {
+  account: string;
+  asset: string;
+  amount: string;
+};
+
+export function buildCollateralDepositCalldata(ctx: GraphQLContext, input: CollateralIoInput): string {
+  const account = normalizeAddress(input.account);
+  const asset = normalizeAddress(input.asset);
+  const amount = parseBigInt(input.amount, "amount");
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("deposit", [account, asset, amount]);
+}
+
+export function buildCollateralWithdrawCalldata(ctx: GraphQLContext, input: CollateralIoInput): string {
+  const account = normalizeAddress(input.account);
+  const asset = normalizeAddress(input.asset);
+  const amount = parseBigInt(input.amount, "amount");
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("withdraw", [account, asset, amount]);
+}
+
+export function buildCollateralSetPriceCalldata(ctx: GraphQLContext, asset: string, priceWad: string): string {
+  const normalizedAsset = normalizeAddress(asset);
+  if (!normalizedAsset || normalizedAsset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const price = parseBigInt(priceWad, "priceWad");
+  if (price <= 0n) {
+    throw new Error("priceWad must be positive");
+  }
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("setAssetPrice", [normalizedAsset, price]);
+}
+
+type CollateralAssetConfigInput = {
+  asset: string;
+  isEnabled: boolean;
+  collateralFactorBps: number;
+  liquidationThresholdBps: number;
+  decimals: number;
+};
+
+export function buildCollateralSetConfigCalldata(ctx: GraphQLContext, input: CollateralAssetConfigInput): string {
+  const asset = normalizeAddress(input.asset);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+
+  const collateralFactor = Number(input.collateralFactorBps);
+  const liquidationThreshold = Number(input.liquidationThresholdBps);
+  const decimals = Number(input.decimals);
+
+  if (!Number.isInteger(collateralFactor) || collateralFactor < 0 || collateralFactor > 10_000) {
+    throw new Error("collateralFactorBps must be integer between 0 and 10000");
+  }
+  if (!Number.isInteger(liquidationThreshold) || liquidationThreshold < 0 || liquidationThreshold > 10_000) {
+    throw new Error("liquidationThresholdBps must be integer between 0 and 10000");
+  }
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error("decimals must be integer between 0 and 36");
+  }
+
+  const config = {
+    isEnabled: Boolean(input.isEnabled),
+    collateralFactorBps: collateralFactor,
+    liquidationThresholdBps: liquidationThreshold,
+    decimals
+  } as const;
+
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("setAssetConfig", [asset, config]);
+}
+
+type GrantRoleInput = {
+  contract: string;
+  role: string;
+  account: string;
+};
+
+export function buildGrantRoleCalldata(ctx: GraphQLContext, input: GrantRoleInput): string {
+  const contractAddress = normalizeAddress(input.contract);
+  if (!contractAddress || contractAddress === ZERO_ADDRESS) {
+    throw new Error("contract must be a valid address");
+  }
+  const account = normalizeAddress(input.account);
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  const roleHex = input.role.toLowerCase();
+  if (!roleHex.startsWith("0x") || roleHex.length !== 66) {
+    throw new Error("role must be 32-byte hex string");
+  }
+
+  const normalizedMap = new Map<string, any>([
+    [normalizeAddress(ctx.sdk.optionsMarket.target as string), ctx.sdk.optionsMarket.interface],
+    [normalizeAddress(ctx.sdk.collateralManager.target as string), ctx.sdk.collateralManager.interface],
+    [normalizeAddress(ctx.sdk.liquidityVault.target as string), ctx.sdk.liquidityVault.interface],
+    [normalizeAddress(ctx.sdk.insuranceFund.target as string), ctx.sdk.insuranceFund.interface],
+    [normalizeAddress(ctx.sdk.optionToken.target as string), ctx.sdk.optionToken.interface]
+  ]);
+
+  const contractInterface = normalizedMap.get(contractAddress);
+  if (!contractInterface) {
+    throw new Error("grantRole not supported for the provided contract address");
+  }
+
+  return contractInterface.encodeFunctionData("grantRole", [roleHex, account]);
+}
+
+type OraclePriceInput = {
+  asset: string;
+  price: string;
+  decimals: number;
+};
+
+export function buildOracleSetPriceCalldata(ctx: GraphQLContext, input: OraclePriceInput): string {
+  const asset = normalizeAddress(input.asset);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const price = parseBigInt(input.price, "price");
+  const decimals = Number(input.decimals);
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 36) {
+    throw new Error("decimals must be integer between 0 and 36");
+  }
+  return ctx.sdk.oracleRouter.interface.encodeFunctionData("setAssetPrice", [asset, price, decimals]);
+}
+
 export type CreateSeriesCalldataInput = {
   underlying: string;
   quote: string;

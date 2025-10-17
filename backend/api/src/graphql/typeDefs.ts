@@ -204,6 +204,37 @@ export const typeDefs = /* GraphQL */ `
     size: String!
   }
 
+  input CollateralMoveInput {
+    account: String!
+    asset: String!
+    amount: String!
+  }
+
+  input CollateralPriceInput {
+    asset: String!
+    priceWad: String!
+  }
+
+  input CollateralAssetConfigInput {
+    asset: String!
+    isEnabled: Boolean!
+    collateralFactorBps: Int!
+    liquidationThresholdBps: Int!
+    decimals: Int!
+  }
+
+  input GrantRoleInput {
+    contract: String!
+    role: String!
+    account: String!
+  }
+
+  input OraclePriceInput {
+    asset: String!
+    price: String!
+    decimals: Int!
+  }
+
   input SettleSeriesInput {
     seriesId: String!
     residualRecipient: String
@@ -260,6 +291,12 @@ export const typeDefs = /* GraphQL */ `
     lpWithdrawCalldata(input: LpWithdrawInput!): String!
     openShortCalldata(input: OpenShortInput!): String!
     closeShortCalldata(input: CloseShortInput!): String!
+    collateralDepositCalldata(input: CollateralMoveInput!): String!
+    collateralWithdrawCalldata(input: CollateralMoveInput!): String!
+    collateralSetPriceCalldata(input: CollateralPriceInput!): String!
+    collateralSetConfigCalldata(input: CollateralAssetConfigInput!): String!
+    grantRoleCalldata(input: GrantRoleInput!): String!
+    oracleSetPriceCalldata(input: OraclePriceInput!): String!
     createSeriesCalldata(input: CreateSeriesInput!): String!
     settleSeriesCalldata(input: SettleSeriesInput!): String!
     enqueueRiskSnapshot(userAddress: String!): String!

@@ -22,6 +22,7 @@
     "worker:indexer": "NODE_ENV=${NODE_ENV:-development} tsx workers/event-indexer.ts"
   },
   "dependencies": {
+    "@fastify/cors": "^8.2.1",
     "@prisma/client": "^5.17.0",
     "bullmq": "^5.61.0",
     "dotenv": "^17.2.3",

@@ -7,7 +7,7 @@ async function main() {
   const network = hre.network;
   const [admin, feeRecipient] = await ethers.getSigners();
 
-  const MockERC20 = await ethers.getContractFactory("MockERC20");
+  const MinimalERC20 = await ethers.getContractFactory("MinimalERC20");
   const OptionToken = await ethers.getContractFactory("OptionToken");
   const CollateralManager =
     await ethers.getContractFactory("CollateralManager");
@@ -21,19 +21,13 @@ async function main() {
     "OptionsMarketHarness"
   );
 
-  const quoteToken = await MockERC20.deploy(
-    "Mock USDC",
-    "mUSDC",
-    6,
+  const quoteToken = await MinimalERC20.deploy(
     ethers.parseUnits("10000000", 6),
     admin.address
   );
   await quoteToken.waitForDeployment();
 
-  const underlyingToken = await MockERC20.deploy(
-    "Mock ETH",
-    "mETH",
-    18,
+  const underlyingToken = await MinimalERC20.deploy(
     ethers.parseUnits("1000000", 18),
     admin.address
   );

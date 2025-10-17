@@ -2,6 +2,7 @@ import "dotenv/config";
 
 import Fastify from "fastify";
 import mercurius from "mercurius";
+import cors from "@fastify/cors";
 
 import { typeDefs } from "./graphql/typeDefs";
 import resolvers from "./graphql/resolvers";
@@ -10,6 +11,12 @@ import { rpcUrl, addresses } from "./sdk";
 
 async function buildServer() {
   const app = Fastify({ logger: true });
+  await app.register(cors, {
+    origin: true,
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["content-type", "authorization", "x-api-key"],
+    credentials: false
+  });
   app.register(mercurius, {
     schema: typeDefs,
     resolvers,

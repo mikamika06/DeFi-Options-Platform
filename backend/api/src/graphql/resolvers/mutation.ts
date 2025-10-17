@@ -6,6 +6,12 @@ import {
   buildLpDepositCalldata,
   buildLpWithdrawCalldata,
   buildOpenShortCalldata,
+  buildCollateralDepositCalldata,
+  buildCollateralWithdrawCalldata,
+  buildCollateralSetPriceCalldata,
+  buildCollateralSetConfigCalldata,
+  buildGrantRoleCalldata,
+  buildOracleSetPriceCalldata,
   buildSettleSeriesCalldata,
   buildIvUpdateCalldata,
   buildTradeCalldata,
@@ -37,6 +43,19 @@ type LiquidationArgs = { input: { seriesId: string; account: string; size: strin
 type MarginCheckArgs = { input: { account: string; seriesId?: string | null; size?: string | null; receiver?: string | null } };
 type IvUpdateArgs = { input: { seriesId: string; ivWad: string } };
 type EnqueueGreeksArgs = { seriesId: string };
+type CollateralMoveArgs = { input: { account: string; asset: string; amount: string } };
+type CollateralPriceArgs = { input: { asset: string; priceWad: string } };
+type CollateralConfigArgs = {
+  input: {
+    asset: string;
+    isEnabled: boolean;
+    collateralFactorBps: number;
+    liquidationThresholdBps: number;
+    decimals: number;
+  };
+};
+type GrantRoleArgs = { input: { contract: string; role: string; account: string } };
+type OraclePriceArgs = { input: { asset: string; price: string; decimals: number } };
 
 export const Mutation = {
   tradeCalldata: async (_: unknown, args: TradeArgs, ctx: GraphQLContext) =>
@@ -51,6 +70,26 @@ export const Mutation = {
     buildOpenShortCalldata(ctx, args.input.seriesId, args.input.size, args.input.recipient),
   closeShortCalldata: async (_: unknown, args: CloseShortArgs, ctx: GraphQLContext) =>
     buildCloseShortCalldata(ctx, args.input.seriesId, args.input.size),
+  collateralDepositCalldata: async (_: unknown, args: CollateralMoveArgs, ctx: GraphQLContext) =>
+    buildCollateralDepositCalldata(ctx, args.input),
+  collateralWithdrawCalldata: async (_: unknown, args: CollateralMoveArgs, ctx: GraphQLContext) =>
+    buildCollateralWithdrawCalldata(ctx, args.input),
+  collateralSetPriceCalldata: async (_: unknown, args: CollateralPriceArgs, ctx: GraphQLContext) => {
+    requireRole(ctx, "admin");
+    return buildCollateralSetPriceCalldata(ctx, args.input.asset, args.input.priceWad);
+  },
+  collateralSetConfigCalldata: async (_: unknown, args: CollateralConfigArgs, ctx: GraphQLContext) => {
+    requireRole(ctx, "admin");
+    return buildCollateralSetConfigCalldata(ctx, args.input);
+  },
+  grantRoleCalldata: async (_: unknown, args: GrantRoleArgs, ctx: GraphQLContext) => {
+    requireRole(ctx, "admin");
+    return buildGrantRoleCalldata(ctx, args.input);
+  },
+  oracleSetPriceCalldata: async (_: unknown, args: OraclePriceArgs, ctx: GraphQLContext) => {
+    requireRole(ctx, "admin");
+    return buildOracleSetPriceCalldata(ctx, args.input);
+  },
   createSeriesCalldata: async (_: unknown, args: CreateSeriesArgs, ctx: GraphQLContext) => {
     requireRole(ctx, "admin");
     return buildCreateSeriesCalldata(ctx, args.input);
