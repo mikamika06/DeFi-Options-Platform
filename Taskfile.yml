@@ -49,3 +49,9 @@ tasks:
     desc: Deploy baseline contracts to local Anvil network
     cmds:
       - ./scripts/deploy_contracts.sh
+
+  smoke:trade-flow:
+    desc: Run end-to-end create -> trade -> close smoke test on Anvil
+    dir: contracts
+    cmds:
+      - pnpm exec hardhat run script/smokeTrade.ts --network anvil

@@ -33,12 +33,20 @@ export const INSURANCE_FUND_ADDRESS = ensureAddress(
   deployments.insuranceFund
 );
 
+export const OPTION_TOKEN_ADDRESS = ensureAddress(
+  process.env.NEXT_PUBLIC_OPTION_TOKEN_ADDRESS,
+  deployments.optionToken
+);
+
 export const ORACLE_ROUTER_ADDRESS = ensureAddress(
   process.env.NEXT_PUBLIC_ORACLE_ROUTER_ADDRESS,
   deployments.oracleRouter
 );
 
-export const QUOTE_TOKEN_ADDRESS = "0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923";
+export const QUOTE_TOKEN_ADDRESS = ensureAddress(
+  process.env.NEXT_PUBLIC_QUOTE_TOKEN_ADDRESS,
+  deployments.quoteToken
+);
 
 export const DEFAULT_ADMIN_ROLE =
   "0x0000000000000000000000000000000000000000000000000000000000000000";

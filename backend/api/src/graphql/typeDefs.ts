@@ -223,6 +223,42 @@ export const typeDefs = /* GraphQL */ `
     decimals: Int!
   }
 
+  input CollateralMarginParamsInput {
+    initialBps: Int!
+    maintenanceBps: Int!
+    gracePeriod: Int!
+  }
+
+  input CollateralLiquidatableMarketInput {
+    market: String!
+    approved: Boolean!
+  }
+
+  input CollateralMaintenanceInput {
+    account: String!
+    requirement: String!
+  }
+
+  input CollateralMarginMovementInput {
+    account: String!
+    amountWad: String!
+    maintenanceDeltaWad: String!
+  }
+
+  input CollateralLiquidationInput {
+    account: String!
+    asset: String!
+    amount: String!
+  }
+
+  input CollateralExecuteLiquidationInput {
+    market: String!
+    seriesId: String!
+    account: String!
+    size: String!
+    payoutRecipient: String
+  }
+
   input GrantRoleInput {
     contract: String!
     role: String!
@@ -233,6 +269,11 @@ export const typeDefs = /* GraphQL */ `
     asset: String!
     price: String!
     decimals: Int!
+  }
+
+  input OptionsMarketSettlementSharesInput {
+    vaultShareBps: Int!
+    insuranceShareBps: Int!
   }
 
   input SettleSeriesInput {
@@ -257,6 +298,58 @@ export const typeDefs = /* GraphQL */ `
   input IvUpdateInput {
     seriesId: String!
     ivWad: String!
+  }
+
+  input VaultTrancheConfigInput {
+    performanceFeeBps: Int!
+    managementFeeBps: Int!
+    withdrawalCooldown: Int!
+  }
+
+  input VaultDefineTrancheInput {
+    trancheId: String!
+    weightBps: Int!
+  }
+
+  input VaultPremiumHandlerInput {
+    handler: String!
+    enabled: Boolean!
+  }
+
+  input VaultAssetAmountInput {
+    asset: String!
+    amount: String!
+  }
+
+  input VaultClaimTrancheInput {
+    trancheId: String!
+    recipient: String!
+  }
+
+  input VaultHedgeRequestInput {
+    amount: String!
+    recipient: String!
+  }
+
+  input InsuranceApprovalInput {
+    asset: String!
+    approved: Boolean!
+  }
+
+  input InsuranceMarketInput {
+    market: String!
+    enabled: Boolean!
+  }
+
+  input InsuranceAmountInput {
+    asset: String!
+    amount: String!
+  }
+
+  input InsuranceTransferInput {
+    asset: String!
+    amount: String!
+    recipient: String!
   }
 
   type TradeConnection {
@@ -295,9 +388,54 @@ export const typeDefs = /* GraphQL */ `
     collateralWithdrawCalldata(input: CollateralMoveInput!): String!
     collateralSetPriceCalldata(input: CollateralPriceInput!): String!
     collateralSetConfigCalldata(input: CollateralAssetConfigInput!): String!
+    collateralSetMarginParameters(input: CollateralMarginParamsInput!): String!
+    collateralSetLiquidatableMarket(input: CollateralLiquidatableMarketInput!): String!
+    collateralSetMaintenanceMargin(input: CollateralMaintenanceInput!): String!
+    collateralPause: String!
+    collateralUnpause: String!
+    collateralForceLiquidation(input: CollateralLiquidationInput!): String!
+    collateralLockMargin(input: CollateralMarginMovementInput!): String!
+    collateralReleaseMargin(input: CollateralMarginMovementInput!): String!
+    collateralEvaluateAccount(account: String!): String!
+    collateralResolveLiquidation(account: String!): String!
+    collateralExecuteLiquidation(input: CollateralExecuteLiquidationInput!): String!
     grantRoleCalldata(input: GrantRoleInput!): String!
     oracleSetPriceCalldata(input: OraclePriceInput!): String!
     createSeriesCalldata(input: CreateSeriesInput!): String!
+    optionsMarketSetFeeRecipient(address: String!): String!
+    optionsMarketSetOracleRouter(address: String!): String!
+    optionsMarketSetIvOracle(address: String!): String!
+    optionsMarketSetCollateralManager(address: String!): String!
+    optionsMarketSetLiquidityVault(address: String!): String!
+    optionsMarketSetInsuranceFund(address: String!): String!
+    optionsMarketSetInsuranceFeeBps(feeBps: Int!): String!
+    optionsMarketSetSettlementShares(input: OptionsMarketSettlementSharesInput!): String!
+    vaultPause: String!
+    vaultUnpause: String!
+    vaultSetHedgeReserveBps(newBps: Int!): String!
+    vaultSetHedgeOperator(operator: String!): String!
+    vaultSetTrancheConfig(input: VaultTrancheConfigInput!): String!
+    vaultDefineTranche(input: VaultDefineTrancheInput!): String!
+    vaultSetPremiumHandler(input: VaultPremiumHandlerInput!): String!
+    vaultRecordPremium(input: VaultAssetAmountInput!): String!
+    vaultRecordLoss(input: VaultAssetAmountInput!): String!
+    vaultHandleSettlement(input: VaultAssetAmountInput!): String!
+    vaultClaimTranche(input: VaultClaimTrancheInput!): String!
+    vaultClaimProtocolReserve(recipient: String!): String!
+    vaultAccruePerformanceFee(amount: String!): String!
+    vaultAccrueManagementFee(amount: String!): String!
+    vaultRequestHedgeFunds(input: VaultHedgeRequestInput!): String!
+    vaultReturnHedgeProfit(amount: String!): String!
+    insuranceSetAssetApproval(input: InsuranceApprovalInput!): String!
+    insuranceSetMarket(input: InsuranceMarketInput!): String!
+    insuranceDeposit(input: InsuranceAmountInput!): String!
+    insuranceNotifyPremium(input: InsuranceAmountInput!): String!
+    insuranceRequestCoverage(input: InsuranceTransferInput!): String!
+    insuranceWithdraw(input: InsuranceTransferInput!): String!
+    insuranceRescue(input: InsuranceTransferInput!): String!
+    optionTokenSetBaseUri(uri: String!): String!
+    optionTokenGrantRoles(account: String!): String!
+    optionTokenRevokeRoles(account: String!): String!
     settleSeriesCalldata(input: SettleSeriesInput!): String!
     enqueueRiskSnapshot(userAddress: String!): String!
     settleSeriesExecute(seriesId: String!, residualRecipient: String): String!

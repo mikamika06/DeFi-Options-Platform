@@ -1,25 +1,87 @@
-node_modules
-dist
-build
-.env
-.env.*
-coverage
-artifacts
-cache
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.turbo/
+
+# Environment files
+.env*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
 .DS_Store
-tmp
-logs
+Thumbs.db
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# Logs
+logs/
 *.log
-pnpm-lock.yaml
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Blockchain
+artifacts/
+cache/
+hardhat.cache/
+contracts/types/
+contracts/out/
+contracts/artifacts/
+contracts/cache/
+
+# Lock files (use pnpm)
 package-lock.json
 yarn.lock
+pnpm-lock.yaml
+
+# Temporary
+tmp/
+temp/
+
+# Docker
+/docker-data/
+
+# TypeScript
 *.tsbuildinfo
-hardhat.cache
-/docker-data
-.idea
+.tsbuildinfo
 
-README.md
+# Test files
+logs_*.txt
+*.test.ts.backup
+test-results/
 
-docs
-contracts/types
-contracts/out
+# Documentation (remove from repo)
+docs/
+
+# Deployment artifacts
+deployments/anvil.json
+deployments/localhost.json
+
+# User guides
+*_GUIDE.md

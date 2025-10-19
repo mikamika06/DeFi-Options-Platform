@@ -19,6 +19,26 @@ function parseBigInt(value: string, field: string): bigint {
   }
 }
 
+function normalizeBytes32(value: string, field: string): string {
+  if (!value) throw new Error(`${field} is required`);
+  const normalized = value.toLowerCase();
+  if (!normalized.startsWith("0x") || normalized.length !== 66) {
+    throw new Error(`${field} must be 32-byte hex string`);
+  }
+  return normalized;
+}
+
+function parseUint(value: number | string, field: string, opts?: { max?: number }): number {
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error(`${field} must be a non-negative integer`);
+  }
+  if (opts?.max !== undefined && parsed > opts.max) {
+    throw new Error(`${field} must be <= ${opts.max}`);
+  }
+  return parsed;
+}
+
 export function buildTradeCalldata(
   ctx: GraphQLContext,
   seriesId: string,
@@ -271,4 +291,476 @@ export function buildIvUpdateCalldata(ctx: GraphQLContext, seriesId: string, ivW
   const normalizedId = normalizeSeriesId(seriesId);
   const iv = parseBigInt(ivWad, "iv");
   return ctx.sdk.ivOracle.interface.encodeFunctionData("setIV", [normalizedId, iv]);
+}
+
+/* ----------------------- Options Market Admin ----------------------- */
+
+export function buildOptionsMarketSetFeeRecipient(ctx: GraphQLContext, recipient: string): string {
+  const address = normalizeAddress(recipient);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setFeeRecipient", [address]);
+}
+
+export function buildOptionsMarketSetOracleRouter(ctx: GraphQLContext, router: string): string {
+  const address = normalizeAddress(router);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("oracle router must be a valid address");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setOracleRouter", [address]);
+}
+
+export function buildOptionsMarketSetIvOracle(ctx: GraphQLContext, oracle: string): string {
+  const address = normalizeAddress(oracle);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("iv oracle must be a valid address");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setIvOracle", [address]);
+}
+
+export function buildOptionsMarketSetCollateralManager(ctx: GraphQLContext, manager: string): string {
+  const address = normalizeAddress(manager);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("collateral manager must be a valid address");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setCollateralManager", [address]);
+}
+
+export function buildOptionsMarketSetLiquidityVault(ctx: GraphQLContext, vault: string): string {
+  const address = normalizeAddress(vault);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("liquidity vault must be a valid address");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setLiquidityVault", [address]);
+}
+
+export function buildOptionsMarketSetInsuranceFund(ctx: GraphQLContext, fund: string): string {
+  const address = normalizeAddress(fund);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("insurance fund must be a valid address");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setInsuranceFund", [address]);
+}
+
+export function buildOptionsMarketSetInsuranceFeeBps(ctx: GraphQLContext, feeBps: number): string {
+  const fee = parseUint(feeBps, "feeBps", { max: 10_000 });
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setInsuranceFeeBps", [fee]);
+}
+
+type SettlementSharesInput = {
+  vaultShareBps: number;
+  insuranceShareBps: number;
+};
+
+export function buildOptionsMarketSetSettlementShares(ctx: GraphQLContext, input: SettlementSharesInput): string {
+  const vaultShare = parseUint(input.vaultShareBps, "vaultShareBps", { max: 10_000 });
+  const insuranceShare = parseUint(input.insuranceShareBps, "insuranceShareBps", { max: 10_000 });
+  if (vaultShare + insuranceShare > 10_000) {
+    throw new Error("sum of settlement shares must be <= 10000 bps");
+  }
+  return ctx.sdk.optionsMarket.interface.encodeFunctionData("setSettlementShares", [vaultShare, insuranceShare]);
+}
+
+/* ----------------------- Collateral Manager Admin ----------------------- */
+
+type CollateralMarginParamsInput = {
+  initialBps: number;
+  maintenanceBps: number;
+  gracePeriod: number;
+};
+
+export function buildCollateralSetMarginParameters(ctx: GraphQLContext, input: CollateralMarginParamsInput): string {
+  const initial = parseUint(input.initialBps, "initialBps", { max: 50_000 });
+  const maintenance = parseUint(input.maintenanceBps, "maintenanceBps", { max: 50_000 });
+  if (initial < maintenance) {
+    throw new Error("initialBps must be >= maintenanceBps");
+  }
+  const gracePeriod = parseUint(input.gracePeriod, "gracePeriod", { max: 4_294_967_295 });
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("setMarginParameters", [
+    initial,
+    maintenance,
+    gracePeriod
+  ]);
+}
+
+export function buildCollateralSetLiquidatableMarket(
+  ctx: GraphQLContext,
+  market: string,
+  approved: boolean
+): string {
+  const address = normalizeAddress(market);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("market must be a valid address");
+  }
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("setLiquidatableMarket", [address, Boolean(approved)]);
+}
+
+export function buildCollateralSetMaintenanceMargin(
+  ctx: GraphQLContext,
+  account: string,
+  requirement: string
+): string {
+  const address = normalizeAddress(account);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  const amount = parseBigInt(requirement, "requirement");
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("setMaintenanceMargin", [address, amount]);
+}
+
+export function buildCollateralPause(ctx: GraphQLContext): string {
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("pause");
+}
+
+export function buildCollateralUnpause(ctx: GraphQLContext): string {
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("unpause");
+}
+
+type CollateralLiquidationInput = {
+  account: string;
+  asset: string;
+  amount: string;
+};
+
+export function buildCollateralForceLiquidation(ctx: GraphQLContext, input: CollateralLiquidationInput): string {
+  const account = normalizeAddress(input.account);
+  const asset = normalizeAddress(input.asset);
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("forceLiquidation", [account, asset, amount]);
+}
+
+type CollateralMarginMovementInput = {
+  account: string;
+  amountWad: string;
+  maintenanceDeltaWad: string;
+};
+
+export function buildCollateralLockMargin(ctx: GraphQLContext, input: CollateralMarginMovementInput): string {
+  const account = normalizeAddress(input.account);
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  const amount = parseBigInt(input.amountWad, "amountWad");
+  const maintenance = parseBigInt(input.maintenanceDeltaWad, "maintenanceDeltaWad");
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("lockMargin", [account, amount, maintenance]);
+}
+
+export function buildCollateralReleaseMargin(ctx: GraphQLContext, input: CollateralMarginMovementInput): string {
+  const account = normalizeAddress(input.account);
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  const amount = parseBigInt(input.amountWad, "amountWad");
+  const maintenance = parseBigInt(input.maintenanceDeltaWad, "maintenanceDeltaWad");
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("releaseMargin", [account, amount, maintenance]);
+}
+
+export function buildCollateralEvaluateAccount(ctx: GraphQLContext, account: string): string {
+  const address = normalizeAddress(account);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("evaluateAccount", [address]);
+}
+
+export function buildCollateralResolveLiquidation(ctx: GraphQLContext, account: string): string {
+  const address = normalizeAddress(account);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("resolveLiquidation", [address]);
+}
+
+type CollateralExecuteLiquidationInput = {
+  market: string;
+  seriesId: string;
+  account: string;
+  size: string;
+  payoutRecipient?: string | null;
+};
+
+export function buildCollateralExecuteLiquidation(
+  ctx: GraphQLContext,
+  input: CollateralExecuteLiquidationInput
+): string {
+  const market = normalizeAddress(input.market);
+  const account = normalizeAddress(input.account);
+  if (!market || market === ZERO_ADDRESS) {
+    throw new Error("market must be a valid address");
+  }
+  if (!account || account === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  const seriesId = normalizeSeriesId(input.seriesId);
+  const size = parseBigInt(input.size, "size");
+  const payout = input.payoutRecipient ? normalizeAddress(input.payoutRecipient) : ZERO_ADDRESS;
+  return ctx.sdk.collateralManager.interface.encodeFunctionData("executeLiquidation", [
+    market,
+    seriesId,
+    account,
+    size,
+    payout
+  ]);
+}
+
+/* ----------------------- Liquidity Vault Admin ----------------------- */
+
+export function buildVaultPause(ctx: GraphQLContext): string {
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("pause");
+}
+
+export function buildVaultUnpause(ctx: GraphQLContext): string {
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("unpause");
+}
+
+export function buildVaultSetHedgeReserveBps(ctx: GraphQLContext, newBps: number): string {
+  const bps = parseUint(newBps, "newBps", { max: 10_000 });
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("setHedgeReserveBps", [bps]);
+}
+
+export function buildVaultSetHedgeOperator(ctx: GraphQLContext, operator: string): string {
+  const address = normalizeAddress(operator);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("operator must be a valid address");
+  }
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("setHedgeOperator", [address]);
+}
+
+type VaultTrancheConfigInput = {
+  performanceFeeBps: number;
+  managementFeeBps: number;
+  withdrawalCooldown: number;
+};
+
+export function buildVaultSetTrancheConfig(ctx: GraphQLContext, input: VaultTrancheConfigInput): string {
+  const performance = parseUint(input.performanceFeeBps, "performanceFeeBps", { max: 10_000 });
+  const management = parseUint(input.managementFeeBps, "managementFeeBps", { max: 10_000 });
+  const cooldown = parseUint(input.withdrawalCooldown, "withdrawalCooldown", { max: 4_294_967_295 });
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("setTrancheConfig", [
+    {
+      performanceFeeBps: performance,
+      managementFeeBps: management,
+      withdrawalCooldown: cooldown
+    }
+  ]);
+}
+
+type VaultDefineTrancheInput = {
+  trancheId: string;
+  weightBps: number;
+};
+
+export function buildVaultDefineTranche(ctx: GraphQLContext, input: VaultDefineTrancheInput): string {
+  const trancheId = normalizeBytes32(input.trancheId, "trancheId");
+  const weight = parseUint(input.weightBps, "weightBps", { max: 10_000 });
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("defineTranche", [trancheId, weight]);
+}
+
+type VaultPremiumHandlerInput = {
+  handler: string;
+  enabled: boolean;
+};
+
+export function buildVaultSetPremiumHandler(ctx: GraphQLContext, input: VaultPremiumHandlerInput): string {
+  const handler = normalizeAddress(input.handler);
+  if (!handler || handler === ZERO_ADDRESS) {
+    throw new Error("handler must be a valid address");
+  }
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("setPremiumHandler", [handler, Boolean(input.enabled)]);
+}
+
+type VaultAssetAmountInput = {
+  asset: string;
+  amount: string;
+};
+
+export function buildVaultRecordPremium(ctx: GraphQLContext, input: VaultAssetAmountInput): string {
+  const asset = normalizeAddress(input.asset);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("recordPremium", [asset, amount]);
+}
+
+export function buildVaultRecordLoss(ctx: GraphQLContext, input: VaultAssetAmountInput): string {
+  const asset = normalizeAddress(input.asset);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("recordLoss", [asset, amount]);
+}
+
+export function buildVaultHandleSettlement(ctx: GraphQLContext, input: VaultAssetAmountInput): string {
+  const asset = normalizeAddress(input.asset);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("handleSettlementPayout", [asset, amount]);
+}
+
+type VaultClaimTrancheInput = {
+  trancheId: string;
+  recipient: string;
+};
+
+export function buildVaultClaimTranche(ctx: GraphQLContext, input: VaultClaimTrancheInput): string {
+  const trancheId = normalizeBytes32(input.trancheId, "trancheId");
+  const recipient = normalizeAddress(input.recipient);
+  if (!recipient || recipient === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("claimTranche", [trancheId, recipient]);
+}
+
+export function buildVaultClaimProtocolReserve(ctx: GraphQLContext, recipient: string): string {
+  const address = normalizeAddress(recipient);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("claimProtocolReserve", [address]);
+}
+
+export function buildVaultAccruePerformanceFee(ctx: GraphQLContext, amount: string): string {
+  const wad = parseBigInt(amount, "amount");
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("accruePerformanceFee", [wad]);
+}
+
+export function buildVaultAccrueManagementFee(ctx: GraphQLContext, amount: string): string {
+  const wad = parseBigInt(amount, "amount");
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("accrueManagementFee", [wad]);
+}
+
+type VaultHedgeRequestInput = {
+  amount: string;
+  recipient: string;
+};
+
+export function buildVaultRequestHedgeFunds(ctx: GraphQLContext, input: VaultHedgeRequestInput): string {
+  const amount = parseBigInt(input.amount, "amount");
+  const recipient = normalizeAddress(input.recipient);
+  if (!recipient || recipient === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("requestHedgeFunds", [amount, recipient]);
+}
+
+export function buildVaultReturnHedgeProfit(ctx: GraphQLContext, amount: string): string {
+  const wad = parseBigInt(amount, "amount");
+  return ctx.sdk.liquidityVault.interface.encodeFunctionData("returnHedgeProfit", [wad]);
+}
+
+/* ----------------------- Insurance Fund Admin ----------------------- */
+
+export function buildInsuranceSetAssetApproval(ctx: GraphQLContext, asset: string, approved: boolean): string {
+  const address = normalizeAddress(asset);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("setAssetApproval", [address, Boolean(approved)]);
+}
+
+export function buildInsuranceSetMarket(ctx: GraphQLContext, market: string, enabled: boolean): string {
+  const address = normalizeAddress(market);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("market must be a valid address");
+  }
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("setMarket", [address, Boolean(enabled)]);
+}
+
+export function buildInsuranceDeposit(ctx: GraphQLContext, asset: string, amount: string): string {
+  const address = normalizeAddress(asset);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const wad = parseBigInt(amount, "amount");
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("deposit", [address, wad]);
+}
+
+export function buildInsuranceNotifyPremium(ctx: GraphQLContext, asset: string, amount: string): string {
+  const address = normalizeAddress(asset);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  const wad = parseBigInt(amount, "amount");
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("notifyPremium", [address, wad]);
+}
+
+type InsuranceTransferInput = {
+  asset: string;
+  amount: string;
+  recipient: string;
+};
+
+export function buildInsuranceRequestCoverage(ctx: GraphQLContext, input: InsuranceTransferInput): string {
+  const asset = normalizeAddress(input.asset);
+  const recipient = normalizeAddress(input.recipient);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  if (!recipient || recipient === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("requestCoverage", [asset, amount, recipient]);
+}
+
+export function buildInsuranceWithdraw(ctx: GraphQLContext, input: InsuranceTransferInput): string {
+  const asset = normalizeAddress(input.asset);
+  const recipient = normalizeAddress(input.recipient);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  if (!recipient || recipient === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("withdraw", [asset, amount, recipient]);
+}
+
+export function buildInsuranceRescue(ctx: GraphQLContext, input: InsuranceTransferInput): string {
+  const asset = normalizeAddress(input.asset);
+  const recipient = normalizeAddress(input.recipient);
+  if (!asset || asset === ZERO_ADDRESS) {
+    throw new Error("asset must be a valid address");
+  }
+  if (!recipient || recipient === ZERO_ADDRESS) {
+    throw new Error("recipient must be a valid address");
+  }
+  const amount = parseBigInt(input.amount, "amount");
+  return ctx.sdk.insuranceFund.interface.encodeFunctionData("rescue", [asset, amount, recipient]);
+}
+
+/* ----------------------- Option Token Admin ----------------------- */
+
+export function buildOptionTokenSetBaseUri(ctx: GraphQLContext, uri: string): string {
+  if (!uri || uri.trim().length === 0) {
+    throw new Error("uri must be provided");
+  }
+  return ctx.sdk.optionToken.interface.encodeFunctionData("setBaseURI", [uri]);
+}
+
+export function buildOptionTokenGrantRoles(ctx: GraphQLContext, account: string): string {
+  const address = normalizeAddress(account);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  return ctx.sdk.optionToken.interface.encodeFunctionData("grantRoles", [address]);
+}
+
+export function buildOptionTokenRevokeRoles(ctx: GraphQLContext, account: string): string {
+  const address = normalizeAddress(account);
+  if (!address || address === ZERO_ADDRESS) {
+    throw new Error("account must be a valid address");
+  }
+  return ctx.sdk.optionToken.interface.encodeFunctionData("revokeRoles", [address]);
 }

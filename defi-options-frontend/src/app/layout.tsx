@@ -1,3 +1,4 @@
+import "./globals.css";
 import "@rainbow-me/rainbowkit/styles.css"; 
 import { Web3Provider } from "./providers/Web3Provider";
 import { UrqlProvider } from "./providers/UrqlProvider";
@@ -11,12 +12,18 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="uk">
-      <body>
+      <body className="font-sans antialiased text-foreground">
         <UrqlProvider>
           <Web3Provider>
-            <div className="flex flex-col min-h-screen">
+            <div className="relative flex min-h-screen flex-col">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,_rgba(255,255,255,0.85),_rgba(255,255,255,0)_55%),radial-gradient(circle_at_bottom_right,_rgba(226,232,240,0.6),_rgba(255,255,255,0)_55%)]"
+              />
               <Header />
-              <main className="flex-1 container py-8">{children}</main>
+              <main className="flex-1">
+                <div className="mx-auto w-full max-w-7xl px-6 py-12">{children}</div>
+              </main>
               <Toaster />
             </div>
           </Web3Provider>

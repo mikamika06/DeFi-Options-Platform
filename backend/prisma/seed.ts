@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import pkg from "@prisma/client/default.js";
 import { ethers } from "ethers";
 
-const { PrismaClient } = pkg;
+const { PrismaClient, Prisma, OptionType } = pkg;
 const prisma = new PrismaClient();
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";

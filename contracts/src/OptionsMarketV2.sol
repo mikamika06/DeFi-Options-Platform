@@ -23,6 +23,7 @@ import {IInsuranceFund} from "./interfaces/IInsuranceFund.sol";
  */
 abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
+
     bytes32 public constant KEEPER_ROLE = keccak256("KEEPER_ROLE");
     bytes32 public constant RISK_MANAGER_ROLE = keccak256("RISK_MANAGER_ROLE");
     bytes32 public constant IV_UPDATER_ROLE = keccak256("IV_UPDATER_ROLE");
@@ -72,14 +73,14 @@ abstract contract OptionsMarketV2 is AccessControl, Pausable, ReentrancyGuard {
     uint16 public vaultSettlementShareBps;
     uint16 public insuranceSettlementShareBps;
 
-mapping(bytes32 => SeriesState) internal seriesState;
-bytes32[] internal seriesIds;
-mapping(bytes32 => uint256) internal seriesPremiumReserve;
-mapping(bytes32 => mapping(address => uint256)) internal userMarginWad;
-mapping(bytes32 => mapping(address => uint256)) internal userPositionSize;
-mapping(address => uint256) public accountMarginExposure;
-mapping(bytes32 => mapping(address => uint256)) internal writerShortPositions;
-mapping(bytes32 => mapping(address => uint256)) internal writerMarginWad;
+    mapping(bytes32 => SeriesState) internal seriesState;
+    bytes32[] internal seriesIds;
+    mapping(bytes32 => uint256) internal seriesPremiumReserve;
+    mapping(bytes32 => mapping(address => uint256)) internal userMarginWad;
+    mapping(bytes32 => mapping(address => uint256)) internal userPositionSize;
+    mapping(address => uint256) public accountMarginExposure;
+    mapping(bytes32 => mapping(address => uint256)) internal writerShortPositions;
+    mapping(bytes32 => mapping(address => uint256)) internal writerMarginWad;
 
     event SeriesCreated(
         bytes32 indexed id,
@@ -97,31 +98,17 @@ mapping(bytes32 => mapping(address => uint256)) internal writerMarginWad;
     event OracleRouterUpdated(address indexed oracle);
     event IVOracleUpdated(address indexed oracle);
     event CollateralManagerUpdated(address indexed collateralManager);
-    event TradeExecuted(
-        bytes32 indexed id,
-        address indexed trader,
-        uint256 size,
-        uint256 premium,
-        uint256 fee
+    event TradeExecuted(bytes32 indexed id, address indexed trader, uint256 size, uint256 premium, uint256 fee);
+    event PositionClosed(bytes32 indexed id, address indexed account, uint256 size, uint256 payout, uint256 fee);
+    event PositionExercised(bytes32 indexed id, address indexed trader, uint256 size, uint256 payout);
+    event SeriesResidualSwept(bytes32 indexed id, address indexed recipient, uint256 amount);
+    event PositionLiquidated(
+        bytes32 indexed id, address indexed account, address indexed initiator, uint256 size, uint256 payout
     );
-    event PositionClosed(
-        bytes32 indexed id,
-        address indexed account,
-        uint256 size,
-        uint256 payout,
-        uint256 fee
+    event ShortOpened(
+        bytes32 indexed id, address indexed writer, address indexed recipient, uint256 size, uint256 marginWad
     );
-event PositionExercised(bytes32 indexed id, address indexed trader, uint256 size, uint256 payout);
-event SeriesResidualSwept(bytes32 indexed id, address indexed recipient, uint256 amount);
-event PositionLiquidated(
-    bytes32 indexed id,
-    address indexed account,
-    address indexed initiator,
-    uint256 size,
-    uint256 payout
-);
-event ShortOpened(bytes32 indexed id, address indexed writer, address indexed recipient, uint256 size, uint256 marginWad);
-event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint256 marginReleasedWad);
+    event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint256 marginReleasedWad);
 
     enum CloseMode {
         Standard,
@@ -145,12 +132,9 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         address admin
     ) {
         if (
-            address(optionToken_) == address(0) ||
-            address(oracleRouter_) == address(0) ||
-            address(ivOracle_) == address(0) ||
-            address(collateralManager_) == address(0) ||
-            feeRecipient_ == address(0) ||
-            admin == address(0)
+            address(optionToken_) == address(0) || address(oracleRouter_) == address(0)
+                || address(ivOracle_) == address(0) || address(collateralManager_) == address(0)
+                || feeRecipient_ == address(0) || admin == address(0)
         ) {
             revert OptionsMarket_InvalidAddress();
         }
@@ -255,7 +239,9 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         });
         seriesIds.push(id);
 
-        emit SeriesCreated(id, config.underlying, config.quote, config.strike, config.expiry, config.isCall, config.baseFeeBps);
+        emit SeriesCreated(
+            id, config.underlying, config.quote, config.strike, config.expiry, config.isCall, config.baseFeeBps
+        );
     }
 
     function quote(bytes32 id, uint256 size) public view returns (uint256 premium, uint256 fee) {
@@ -350,16 +336,8 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         if (state.settled) revert OptionsMarket_SeriesSettled(id);
         if (block.timestamp >= state.config.expiry) revert OptionsMarket_PastExpiry(id);
 
-        (payout, fee) = _closePositionInternal(
-            id,
-            msg.sender,
-            size,
-            minPayout,
-            msg.sender,
-            true,
-            CloseMode.Standard,
-            msg.sender
-        );
+        (payout, fee) =
+            _closePositionInternal(id, msg.sender, size, minPayout, msg.sender, true, CloseMode.Standard, msg.sender);
     }
 
     function liquidatePosition(bytes32 id, address account, uint256 size, address receiver)
@@ -376,16 +354,8 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         if (block.timestamp >= state.config.expiry) revert OptionsMarket_PastExpiry(id);
 
         address payoutReceiver = receiver == address(0) ? feeRecipient : receiver;
-        (payout, fee) = _closePositionInternal(
-            id,
-            account,
-            size,
-            0,
-            payoutReceiver,
-            false,
-            CloseMode.Liquidation,
-            msg.sender
-        );
+        (payout, fee) =
+            _closePositionInternal(id, account, size, 0, payoutReceiver, false, CloseMode.Liquidation, msg.sender);
     }
 
     function openShort(bytes32 id, uint256 size, address recipient)
@@ -402,7 +372,7 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         if (state.settled) revert OptionsMarket_SeriesSettled(id);
         if (block.timestamp >= state.config.expiry) revert OptionsMarket_PastExpiry(id);
 
-        (uint256 premium, ) = _calculateQuote(state.config, id, size);
+        (uint256 premium,) = _calculateQuote(state.config, id, size);
         uint8 quoteDecimals = IERC20Metadata(state.config.quote).decimals();
         marginWad = _toWadFromDecimals(premium, quoteDecimals);
 
@@ -440,9 +410,7 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         writerShortPositions[id][msg.sender] = currentShort - size;
         require(state.shortOpenInterest >= uint128(size), "short OI too low");
         uint256 currentMargin = writerMarginWad[id][msg.sender];
-        marginReleasedWad = currentMargin > 0 && currentShort > 0
-            ? (currentMargin * size) / currentShort
-            : 0;
+        marginReleasedWad = currentMargin > 0 && currentShort > 0 ? (currentMargin * size) / currentShort : 0;
         writerMarginWad[id][msg.sender] = currentMargin > marginReleasedWad ? currentMargin - marginReleasedWad : 0;
 
         if (marginReleasedWad > 0) {
@@ -514,9 +482,8 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
 
         if (ctx.marginReleaseWad > 0) {
             uint256 currentExposure = accountMarginExposure[account];
-            accountMarginExposure[account] = currentExposure > ctx.marginReleaseWad
-                ? currentExposure - ctx.marginReleaseWad
-                : 0;
+            accountMarginExposure[account] =
+                currentExposure > ctx.marginReleaseWad ? currentExposure - ctx.marginReleaseWad : 0;
         }
 
         if (address(collateralManager) != address(0)) {
@@ -536,11 +503,7 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         fee = ctx.fee;
     }
 
-    function exercise(bytes32 id, uint256 size, uint256 minPayout)
-        external
-        nonReentrant
-        returns (uint256 payout)
-    {
+    function exercise(bytes32 id, uint256 size, uint256 minPayout) external nonReentrant returns (uint256 payout) {
         if (size == 0) revert OptionsMarket_InvalidSize();
 
         SeriesState storage state = seriesState[id];
@@ -552,9 +515,7 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         uint256 marginReleaseWad = _updateUserMargin(id, msg.sender, size);
         if (marginReleaseWad > 0) {
             uint256 exposure = accountMarginExposure[msg.sender];
-            accountMarginExposure[msg.sender] = exposure > marginReleaseWad
-                ? exposure - marginReleaseWad
-                : 0;
+            accountMarginExposure[msg.sender] = exposure > marginReleaseWad ? exposure - marginReleaseWad : 0;
         }
 
         payout = _calculateIntrinsicPayout(state.config, size);
@@ -645,11 +606,11 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         }
     }
 
-    function _calculateQuote(
-        SeriesConfig memory config,
-        bytes32 id,
-        uint256 size
-    ) internal view returns (uint256 premium, uint256 fee) {
+    function _calculateQuote(SeriesConfig memory config, bytes32 id, uint256 size)
+        internal
+        view
+        returns (uint256 premium, uint256 fee)
+    {
         (uint256 spotRaw, uint8 spotDecimals) = oracleRouter.spot(config.underlying);
         if (spotRaw == 0) revert OptionsMarket_InvalidSpot();
 
@@ -669,11 +630,11 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         fee = (premium * config.baseFeeBps) / 10_000;
     }
 
-    function _scaleToDecimals(
-        uint256 amount,
-        uint8 currentDecimals,
-        uint8 targetDecimals
-    ) internal pure returns (uint256) {
+    function _scaleToDecimals(uint256 amount, uint8 currentDecimals, uint8 targetDecimals)
+        internal
+        pure
+        returns (uint256)
+    {
         if (currentDecimals == targetDecimals) return amount;
 
         if (currentDecimals < targetDecimals) {
@@ -700,11 +661,7 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
         }
     }
 
-    function _intrinsicValue(
-        bool isCall,
-        uint256 spot,
-        uint256 strike
-    ) internal pure returns (uint256) {
+    function _intrinsicValue(bool isCall, uint256 spot, uint256 strike) internal pure returns (uint256) {
         if (isCall) {
             return spot > strike ? spot - strike : 0;
         } else {
@@ -768,8 +725,6 @@ event ShortClosed(bytes32 indexed id, address indexed writer, uint256 size, uint
     }
 
     function computeSeriesId(SeriesConfig memory config) public pure returns (bytes32) {
-        return keccak256(
-            abi.encode(config.underlying, config.quote, config.strike, config.expiry, config.isCall)
-        );
+        return keccak256(abi.encode(config.underlying, config.quote, config.strike, config.expiry, config.isCall));
     }
 }

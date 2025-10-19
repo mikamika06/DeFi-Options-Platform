@@ -1,22 +1,31 @@
 "use client";
 
-import React, { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useMemo, useState } from "react";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { DEPLOYMENT_ADDRESSES } from "@/contracts/constants";
+import { OptionsListPanel } from "@/components/options/OptionsListPanel";
+import { useOptionSeries } from "@/hooks/useOptionSeries";
 
 // Contract addresses from deployment
 const CONTRACTS = {
-  optionToken: "0xD0141E899a65C95a556fE2B27e5982A6DE7fDD7A",
-  collateralManager: "0x07882Ae1ecB7429a84f1D53048d35c4bB2056877",
-  liquidityVault: "0x22753E4264FDDc6181dc7cce468904A80a363E44",
-  insuranceFund: "0xA7c59f010700930003b33aB25a7a0679C860f29c",
-  optionsMarket: "0x5bf5b11053e734690269C6B9D438F8C9d48F528A",
-  quoteToken: "0x19cEcCd6942ad38562Ee10bAfd44776ceB67e923", // CleanERC20
-  underlyingToken: "0x34B40BA116d5Dec75548a9e9A8f15411461E8c70",
+  optionToken: DEPLOYMENT_ADDRESSES.optionToken,
+  collateralManager: DEPLOYMENT_ADDRESSES.collateralManager,
+  liquidityVault: DEPLOYMENT_ADDRESSES.liquidityVault,
+  insuranceFund: DEPLOYMENT_ADDRESSES.insuranceFund,
+  optionsMarket: DEPLOYMENT_ADDRESSES.optionsMarket,
+  quoteToken: DEPLOYMENT_ADDRESSES.quoteToken,
+  underlyingToken: DEPLOYMENT_ADDRESSES.underlyingToken,
 };
 
 interface AccountData {
@@ -35,6 +44,9 @@ export default function DeFiDashboard() {
   const [accountData, setAccountData] = useState<AccountData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string>("");
+
+  // Get options data for dashboard stats
+  const { series: optionSeries, fetching: optionsFetching } = useOptionSeries();
 
   // Direct RPC call helper
   const sendRPC = async (method: string, params: unknown[] = []) => {
@@ -189,216 +201,326 @@ export default function DeFiDashboard() {
     }
   };
 
-  return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">DeFi Options Platform</h1>
-          <p className="text-gray-600 mt-2">
-            Complete Options Trading & Liquidity Management
-          </p>
-        </div>
+  const formatKey = (value: string) =>
+    value
+      .replace(/([A-Z])/g, " $1")
+      .replace(/^./, (char) => char.toUpperCase());
 
-        <div className="flex gap-3">
-          <Button
-            onClick={refreshData}
-            disabled={!account || isLoading}
-            variant="outline"
-          >
-            {isLoading ? "Loading..." : "🔄 Refresh"}
-          </Button>
-          <Button onClick={connectWallet} disabled={!!account}>
-            {account
-              ? `${account.slice(0, 6)}...${account.slice(-4)}`
-              : "Connect Wallet"}
-          </Button>
-        </div>
-      </div>
+  const statCards = useMemo(() => {
+    if (!accountData) return [];
+
+    const activeOptions = optionSeries.filter((s) => !s.isSettled).length;
+    const totalOptions = optionSeries.length;
+
+    return [
+      {
+        key: "quoteBalance",
+        label: "Quote Balance",
+        value: `${accountData.quoteBalance} USDC`,
+        badge: { label: "Primary Asset", tone: "primary" as const },
+      },
+      {
+        key: "underlyingBalance",
+        label: "Underlying",
+        value: `${accountData.underlyingBalance} ETH`,
+        badge: { label: "Underlying Asset", tone: "neutral" as const },
+      },
+      {
+        key: "collateralBalance",
+        label: "Collateral",
+        value: `${accountData.collateralBalance} USDC`,
+        badge: { label: "Deposited", tone: "primary" as const },
+      },
+      {
+        key: "optionsAvailable",
+        label: "Options Series",
+        value: optionsFetching
+          ? "Loading..."
+          : `${activeOptions}/${totalOptions}`,
+        badge: { label: "Active/Total", tone: "primary" as const },
+      },
+    ];
+  }, [accountData, optionSeries, optionsFetching]);
+
+  return (
+    <div className="space-y-8">
+      <Card className="border border-border/60 bg-white/95 shadow-md">
+        <CardHeader className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+          <div className="space-y-3">
+            <CardTitle className="text-3xl font-bold text-foreground">
+              DeFi Options Platform
+            </CardTitle>
+            <CardDescription className="max-w-2xl text-base leading-relaxed text-muted-foreground">
+              Manage options positions, liquidity, and insurance from a unified
+              interface. Connect your wallet to access real-time data from the
+              protocol.
+            </CardDescription>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <Button
+              onClick={refreshData}
+              disabled={!account || isLoading}
+              variant="outline"
+              className="rounded-full border-border/80 bg-white/90 px-6 text-sm font-medium shadow-sm hover:border-primary/30 hover:text-primary"
+            >
+              {isLoading ? "Loading…" : "🔄 Refresh Data"}
+            </Button>
+            <Button
+              onClick={connectWallet}
+              variant="default"
+              className="rounded-full px-6 text-sm font-semibold shadow-sm hover:shadow-md"
+            >
+              {account
+                ? `${account.slice(0, 6)}…${account.slice(-4)}`
+                : "Connect Wallet"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="border-t border-border/60 pt-6">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            Key Contracts
+          </p>
+          <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            {Object.entries(CONTRACTS).map(([key, value]) => (
+              <div
+                key={key}
+                className="rounded-xl border border-border/70 bg-white/80 px-4 py-3 text-muted-foreground transition-shadow hover:shadow-sm"
+              >
+                <span className="block text-xs font-semibold uppercase tracking-wider text-foreground/70">
+                  {formatKey(key)}
+                </span>
+                <code className="mt-1 block truncate font-mono text-xs text-foreground/80">
+                  {value}
+                </code>
+              </div>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       {error && (
-        <Alert className="border-red-200 bg-red-50">
-          <AlertDescription className="text-red-800">{error}</AlertDescription>
+        <Alert className="border border-red-100 bg-red-50/80 text-red-700">
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {accountData && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Quote Balance
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {accountData.quoteBalance} USDC
-              </div>
-              <Badge variant="secondary" className="mt-2">
-                Primary Asset
-              </Badge>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Underlying
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {accountData.underlyingBalance} ETH
-              </div>
-              <Badge variant="outline" className="mt-2">
-                Underlying Asset
-              </Badge>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Collateral
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {accountData.collateralBalance} USDC
-              </div>
-              <Badge variant="secondary" className="mt-2">
-                Deposited
-              </Badge>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-gray-600">
-                Liquidity
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {accountData.liquidityProvided} LP
-              </div>
-              <Badge variant="outline" className="mt-2">
-                Provided
-              </Badge>
-            </CardContent>
-          </Card>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {statCards.map((item) => (
+            <Card
+              key={item.key}
+              className="border border-border/60 bg-white shadow-sm transition-shadow hover:shadow-lg"
+            >
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
+                  {item.label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-3xl font-semibold text-foreground">
+                  {item.value}
+                </p>
+                <Badge
+                  variant={
+                    item.badge.tone === "primary" ? "secondary" : "outline"
+                  }
+                  className={`w-fit rounded-full px-3 py-1 text-xs font-semibold tracking-wide ${
+                    item.badge.tone === "primary"
+                      ? "bg-primary/10 text-primary"
+                      : "bg-muted/70 text-muted-foreground"
+                  }`}
+                >
+                  {item.badge.label}
+                </Badge>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       )}
 
       {accountData && (
-        <Tabs defaultValue="trading" className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="trading">Trading</TabsTrigger>
-            <TabsTrigger value="liquidity">Liquidity</TabsTrigger>
-            <TabsTrigger value="collateral">Collateral</TabsTrigger>
-            <TabsTrigger value="insurance">Insurance</TabsTrigger>
+        <Tabs defaultValue="trading" className="w-full space-y-6">
+          <TabsList className="w-full flex-wrap justify-start gap-2">
+            <TabsTrigger value="trading" className="flex-1 sm:flex-none">
+              Trading
+            </TabsTrigger>
+            <TabsTrigger value="options" className="flex-1 sm:flex-none">
+              Options
+            </TabsTrigger>
+            <TabsTrigger value="liquidity" className="flex-1 sm:flex-none">
+              Liquidity
+            </TabsTrigger>
+            <TabsTrigger value="collateral" className="flex-1 sm:flex-none">
+              Collateral
+            </TabsTrigger>
+            <TabsTrigger value="insurance" className="flex-1 sm:flex-none">
+              Insurance Fund
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="trading" className="mt-6">
-            <Card>
+          <TabsContent value="trading">
+            <Card className="border border-border/60 bg-white/95 shadow-sm">
               <CardHeader>
-                <CardTitle>Options Trading</CardTitle>
+                <CardTitle className="text-lg font-semibold text-foreground">
+                  Options Trading
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Advanced trading interface with integrated limits, IV
+                  analysis, and risk metrics.
+                </CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="text-center py-8">
-                  <p className="text-gray-500">
-                    Options trading interface will be implemented here
+                <div className="rounded-2xl border border-dashed border-border/60 bg-white/70 px-6 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Trading interface connects to OptionsMarketV2 at:
                   </p>
-                  <p className="text-sm text-gray-400 mt-2">
-                    Connected to OptionsMarketV2 at {CONTRACTS.optionsMarket}
-                  </p>
+                  <code className="mt-3 inline-block rounded-full bg-muted px-4 py-2 text-xs font-semibold text-foreground">
+                    {CONTRACTS.optionsMarket}
+                  </code>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="liquidity" className="mt-6">
-            <Card>
+          <TabsContent value="options">
+            <div className="space-y-6">
+              <OptionsListPanel showActions={false} />
+              <Card className="border border-border/60 bg-white/95 shadow-sm">
+                <CardHeader>
+                  <CardTitle>Quick Actions</CardTitle>
+                  <CardDescription>
+                    Navigate to trading or options administration
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex flex-wrap gap-3">
+                    <Button
+                      onClick={() => window.open("/trade", "_blank")}
+                      className="flex items-center gap-2"
+                    >
+                      📈 Trade Options
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open("/positions", "_blank")}
+                      className="flex items-center gap-2"
+                    >
+                      📊 My Positions
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => window.open("/admin", "_blank")}
+                      className="flex items-center gap-2"
+                    >
+                      ⚙️ Admin Panel
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="liquidity">
+            <Card className="border border-border/60 bg-white/95 shadow-sm">
               <CardHeader>
-                <CardTitle>Liquidity Management</CardTitle>
+                <CardTitle className="text-lg font-semibold text-foreground">
+                  Liquidity Management
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Monitor pool metrics and reserve checkpoints.
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span>Liquidity Provided:</span>
-                    <span className="font-bold">
-                      {accountData.liquidityProvided} LP
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl bg-muted/60 px-4 py-3">
+                  <span className="text-sm text-muted-foreground">
+                    Provided Liquidity
+                  </span>
+                  <span className="text-lg font-semibold text-foreground">
+                    {accountData.liquidityProvided} LP
+                  </span>
+                </div>
+                <Separator />
+                <div className="rounded-2xl border border-dashed border-border/60 bg-white/70 px-6 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    LiquidityVault interface connected to contract:
+                  </p>
+                  <code className="mt-3 inline-block rounded-full bg-muted px-4 py-2 text-xs font-semibold text-foreground">
+                    {CONTRACTS.liquidityVault}
+                  </code>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="collateral">
+            <Card className="border border-border/60 bg-white/95 shadow-sm">
+              <CardHeader>
+                <CardTitle className="text-lg font-semibold text-foreground">
+                  Collateral and Margin
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Monitor margin requirements and collateral balance.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-xl bg-muted/60 px-4 py-3">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Deposit
                     </span>
-                  </div>
-                  <Separator />
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">
-                      Liquidity vault interface will be implemented here
-                    </p>
-                    <p className="text-sm text-gray-400 mt-2">
-                      Connected to LiquidityVault at {CONTRACTS.liquidityVault}
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="collateral" className="mt-6">
-            <Card>
-              <CardHeader>
-                <CardTitle>Collateral Management</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span>Deposited Collateral:</span>
-                    <span className="font-bold">
+                    <p className="mt-2 text-lg font-semibold text-foreground">
                       {accountData.collateralBalance} USDC
-                    </span>
+                    </p>
                   </div>
-                  <div className="flex justify-between items-center">
-                    <span>Margin Requirement:</span>
-                    <span className="font-bold">
+                  <div className="rounded-xl bg-muted/60 px-4 py-3">
+                    <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      Margin Requirement
+                    </span>
+                    <p className="mt-2 text-lg font-semibold text-foreground">
                       {accountData.marginRequirement} USDC
-                    </span>
-                  </div>
-                  <Separator />
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">
-                      Collateral management interface will be implemented here
-                    </p>
-                    <p className="text-sm text-gray-400 mt-2">
-                      Connected to CollateralManager at{" "}
-                      {CONTRACTS.collateralManager}
                     </p>
                   </div>
+                </div>
+                <Separator />
+                <div className="rounded-2xl border border-dashed border-border/60 bg-white/70 px-6 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Managed by CollateralManager at address:
+                  </p>
+                  <code className="mt-3 inline-block rounded-full bg-muted px-4 py-2 text-xs font-semibold text-foreground">
+                    {CONTRACTS.collateralManager}
+                  </code>
                 </div>
               </CardContent>
             </Card>
           </TabsContent>
 
-          <TabsContent value="insurance" className="mt-6">
-            <Card>
+          <TabsContent value="insurance">
+            <Card className="border border-border/60 bg-white/95 shadow-sm">
               <CardHeader>
-                <CardTitle>Insurance Fund</CardTitle>
+                <CardTitle className="text-lg font-semibold text-foreground">
+                  Insurance Fund
+                </CardTitle>
+                <CardDescription className="text-muted-foreground">
+                  Supports loss coverage and collects premiums from the market.
+                </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span>Insurance Balance:</span>
-                    <span className="font-bold">
-                      {accountData.insuranceBalance} USDC
-                    </span>
-                  </div>
-                  <Separator />
-                  <div className="text-center py-4">
-                    <p className="text-gray-500">
-                      Insurance fund interface will be implemented here
-                    </p>
-                    <p className="text-sm text-gray-400 mt-2">
-                      Connected to InsuranceFund at {CONTRACTS.insuranceFund}
-                    </p>
-                  </div>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between rounded-xl bg-muted/60 px-4 py-3">
+                  <span className="text-sm text-muted-foreground">
+                    Insurance Balance
+                  </span>
+                  <span className="text-lg font-semibold text-foreground">
+                    {accountData.insuranceBalance} USDC
+                  </span>
+                </div>
+                <Separator />
+                <div className="rounded-2xl border border-dashed border-border/60 bg-white/70 px-6 py-8 text-center">
+                  <p className="text-sm text-muted-foreground">
+                    Current InsuranceFund address:
+                  </p>
+                  <code className="mt-3 inline-block rounded-full bg-muted px-4 py-2 text-xs font-semibold text-foreground">
+                    {CONTRACTS.insuranceFund}
+                  </code>
                 </div>
               </CardContent>
             </Card>

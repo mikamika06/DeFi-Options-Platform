@@ -24,7 +24,7 @@ export function StrategyBuilder() {
             size: 1,
             strike: parseFloat(defaultSeries.strike),
             expiryDate: new Date(defaultSeries.expiry * 1000).toLocaleDateString(),
-            premium: 100, // Тимчасова заглушка
+            premium: 100, // Temporary stub
         };
         setLegs([...legs, newLeg]);
     };
@@ -34,7 +34,7 @@ export function StrategyBuilder() {
     };
     
     const executeStrategy = () => {
-        console.log("Виконання стратегії:", legs);
+        console.log("Executing strategy:", legs);
     };
 
     return (
@@ -43,7 +43,7 @@ export function StrategyBuilder() {
             <div className="lg:col-span-1 space-y-4">
                 <Card>
                     <CardHeader>
-                        <CardTitle>Плечі Стратегії ({legs.length})</CardTitle>
+                        <CardTitle>Strategy Legs ({legs.length})</CardTitle>
                     </CardHeader>
                     <CardContent className="space-y-4">
                         {legs.map(leg => (
@@ -55,10 +55,10 @@ export function StrategyBuilder() {
                             </div>
                         ))}
                         <Button onClick={addLeg} variant="outline" className="w-full">
-                            + Додати Плече (Leg)
+                            + Add Leg
                         </Button>
                         <Button onClick={executeStrategy} disabled={legs.length === 0} className="w-full mt-4">
-                            Виконати Стратегію
+                            Execute Strategy
                         </Button>
                     </CardContent>
                 </Card>
@@ -75,7 +75,7 @@ export function StrategyBuilder() {
 export default function StrategiesPage() {
     return (
         <div className="container mx-auto py-8">
-            <h1 className="text-3xl font-bold mb-6">Конструктор Опціонних Стратегій</h1>
+            <h1 className="text-3xl font-bold mb-6">Options Strategy Builder</h1>
             <StrategyBuilder />
         </div>
     );

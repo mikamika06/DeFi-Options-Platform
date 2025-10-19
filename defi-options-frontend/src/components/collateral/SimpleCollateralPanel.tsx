@@ -102,12 +102,11 @@ export function SimpleCollateralPanel() {
         refetchDeposited(),
       ]);
 
-      alert("Депозит успішний!");
+      alert("Deposit successful!");
     } catch (error) {
-      console.error("Помилка депозиту:", error);
-      const message =
-        error instanceof Error ? error.message : "Невідома помилка";
-      alert(`Помилка: ${message}`);
+      console.error("Deposit error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      alert(`Error: ${message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -134,12 +133,11 @@ export function SimpleCollateralPanel() {
 
       await Promise.all([refetchBalance(), refetchDeposited()]);
 
-      alert("Вивід успішний!");
+      alert("Withdrawal successful!");
     } catch (error) {
-      console.error("Помилка виводу:", error);
-      const message =
-        error instanceof Error ? error.message : "Невідома помилка";
-      alert(`Помилка: ${message}`);
+      console.error("Withdrawal error:", error);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      alert(`Error: ${message}`);
     } finally {
       setIsProcessing(false);
     }
@@ -151,69 +149,89 @@ export function SimpleCollateralPanel() {
   };
 
   return (
-    <Card className="w-full max-w-2xl mx-auto mb-8">
-      <CardHeader>
-        <CardTitle>Керування маржею</CardTitle>
-        <CardDescription>
-          Поточний депозит: {formatBalance(deposited)} USDC. Поповніть баланс,
-          щоб відкривати або утримувати позиції.
+    <Card className="mx-auto mb-8 w-full max-w-3xl border border-border/70 bg-white/95 shadow-lg">
+      <CardHeader className="space-y-2">
+        <CardTitle className="text-2xl font-semibold text-foreground">
+          Margin Management
+        </CardTitle>
+        <CardDescription className="text-base text-muted-foreground">
+          Current deposit: {formatBalance(deposited)} USDC. Top up your balance
+          to open or maintain positions.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-          <div>
-            <div className="text-muted-foreground">Депозит</div>
-            <div className="font-semibold">{formatBalance(deposited)} USDC</div>
+      <CardContent className="space-y-6">
+        <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-3">
+          <div className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Deposit
+            </div>
+            <div className="mt-2 text-lg font-semibold text-foreground">
+              {formatBalance(deposited)} USDC
+            </div>
           </div>
-          <div>
-            <div className="text-muted-foreground">Wallet Balance</div>
-            <div className="font-semibold">{formatBalance(balance)} USDC</div>
+          <div className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Wallet Balance
+            </div>
+            <div className="mt-2 text-lg font-semibold text-foreground">
+              {formatBalance(balance)} USDC
+            </div>
           </div>
-          <div>
-            <div className="text-muted-foreground">Allowance</div>
-            <div className="font-semibold">{formatBalance(allowance)} USDC</div>
+          <div className="rounded-2xl border border-border/60 bg-muted/40 px-4 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Allowance
+            </div>
+            <div className="mt-2 text-lg font-semibold text-foreground">
+              {formatBalance(allowance)} USDC
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Сума для депозиту (USDC)
-            </label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-            />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-4 rounded-2xl border border-border/60 bg-white/90 p-5 shadow-sm">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                Deposit Amount (USDC)
+              </label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                className="rounded-xl border border-border/60 bg-white"
+              />
+            </div>
             <Button
               onClick={handleDeposit}
               disabled={!address || isProcessing}
-              className="w-full"
+              className="w-full rounded-full px-6 py-5 text-base font-semibold shadow-md hover:shadow-lg disabled:shadow-none"
             >
-              {isProcessing ? "Обробка..." : "Депонувати"}
+              {isProcessing ? "Processing..." : "Deposit"}
             </Button>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-sm font-medium">
-              Сума для виводу (USDC)
-            </label>
-            <Input
-              type="number"
-              min="0"
-              step="0.01"
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-            />
+          <div className="space-y-4 rounded-2xl border border-border/60 bg-white/90 p-5 shadow-sm">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-muted-foreground">
+                Withdrawal Amount (USDC)
+              </label>
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={withdrawAmount}
+                onChange={(e) => setWithdrawAmount(e.target.value)}
+                className="rounded-xl border border-border/60 bg-white"
+              />
+            </div>
             <Button
               onClick={handleWithdraw}
               disabled={!address || isProcessing || !deposited}
               variant="secondary"
-              className="w-full"
+              className="w-full rounded-full px-6 py-5 text-base font-semibold shadow-md hover:shadow-lg disabled:shadow-none"
             >
-              {isProcessing ? "Обробка..." : "Вивести"}
+              {isProcessing ? "Processing..." : "Withdraw"}
             </Button>
           </div>
         </div>

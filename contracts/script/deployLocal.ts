@@ -5,9 +5,11 @@ import hre from "hardhat";
 async function main() {
   const ethers = (hre as any).ethers;
   const network = hre.network;
-  const [admin, feeRecipient] = await ethers.getSigners();
+  const signers = await ethers.getSigners();
+  const admin = signers[0];
+  const feeRecipient = signers[1] ?? signers[0];
 
-  const MinimalERC20 = await ethers.getContractFactory("MinimalERC20");
+  const SimpleERC20 = await ethers.getContractFactory("SimpleERC20");
   const OptionToken = await ethers.getContractFactory("OptionToken");
   const CollateralManager =
     await ethers.getContractFactory("CollateralManager");
@@ -21,13 +23,19 @@ async function main() {
     "OptionsMarketHarness"
   );
 
-  const quoteToken = await MinimalERC20.deploy(
+  const quoteToken = await SimpleERC20.deploy(
+    "Mock USD Coin",
+    "mUSDC",
+    6,
     ethers.parseUnits("10000000", 6),
     admin.address
   );
   await quoteToken.waitForDeployment();
 
-  const underlyingToken = await MinimalERC20.deploy(
+  const underlyingToken = await SimpleERC20.deploy(
+    "Mock Ether",
+    "mETH",
+    18,
     ethers.parseUnits("1000000", 18),
     admin.address
   );

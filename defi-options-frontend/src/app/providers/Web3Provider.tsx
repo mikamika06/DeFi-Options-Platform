@@ -64,7 +64,7 @@ const config = (() => {
   }
 
   console.warn(
-    "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID не задано. RainbowKit буде вимкнено, а Wagmi використовуватиме базову конфігурацію."
+    "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set. RainbowKit will be disabled and Wagmi will use basic configuration."
   );
 
   return createConfig({
