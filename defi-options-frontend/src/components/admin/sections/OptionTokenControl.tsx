@@ -1,7 +1,13 @@
 "use client";
 
 import * as React from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +30,9 @@ export function OptionTokenControl({ onFeedback }: OptionTokenControlProps) {
     try {
       setIsProcessing(true);
       // Placeholder - would need actual ABI and GraphQL mutation
-      onFeedback("Base URI functionality will be implemented with contract ABI.");
+      onFeedback(
+        "Base URI functionality will be implemented with contract ABI."
+      );
     } catch (error) {
       console.error("Set base URI failed:", error);
       onFeedback("Failed to set base URI.");
@@ -41,7 +49,9 @@ export function OptionTokenControl({ onFeedback }: OptionTokenControlProps) {
     try {
       setIsProcessing(true);
       // Placeholder - would need actual ABI
-      onFeedback("Grant minter functionality will be implemented with contract ABI.");
+      onFeedback(
+        "Grant minter functionality will be implemented with contract ABI."
+      );
     } catch (error) {
       console.error("Grant minter failed:", error);
       onFeedback("Failed to grant minter role.");
@@ -58,7 +68,9 @@ export function OptionTokenControl({ onFeedback }: OptionTokenControlProps) {
     try {
       setIsProcessing(true);
       // Placeholder - would need actual ABI
-      onFeedback("Revoke minter functionality will be implemented with contract ABI.");
+      onFeedback(
+        "Revoke minter functionality will be implemented with contract ABI."
+      );
     } catch (error) {
       console.error("Revoke minter failed:", error);
       onFeedback("Failed to revoke minter role.");
@@ -71,15 +83,14 @@ export function OptionTokenControl({ onFeedback }: OptionTokenControlProps) {
     <Card>
       <CardHeader>
         <CardTitle>OptionToken Control</CardTitle>
-        <CardDescription>
-          Contract: {OPTION_TOKEN_ADDRESS}
-        </CardDescription>
+        <CardDescription>Contract: {OPTION_TOKEN_ADDRESS}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         <p className="text-sm text-muted-foreground">
-          Manage OptionToken metadata and minter roles. Contract ABI integration pending.
+          Manage OptionToken metadata and minter roles. Contract ABI integration
+          pending.
         </p>
-        
+
         <div className="space-y-2">
           <Label htmlFor="baseURI">Base URI for Token Metadata</Label>
           <div className="flex gap-2">
@@ -90,7 +101,7 @@ export function OptionTokenControl({ onFeedback }: OptionTokenControlProps) {
               placeholder="ipfs://..."
               disabled={isProcessing}
             />
-            <Button 
+            <Button
               onClick={handleSetBaseURI}
               disabled={isProcessing || !baseURI}
             >
@@ -109,15 +120,15 @@ export function OptionTokenControl({ onFeedback }: OptionTokenControlProps) {
               placeholder="0x..."
               disabled={isProcessing}
             />
-            <Button 
-              onClick={handleGrantMinter} 
+            <Button
+              onClick={handleGrantMinter}
               variant="default"
               disabled={isProcessing || !minterAddress}
             >
               {isProcessing ? "Processing..." : "Grant Minter"}
             </Button>
-            <Button 
-              onClick={handleRevokeMinter} 
+            <Button
+              onClick={handleRevokeMinter}
               variant="destructive"
               disabled={isProcessing || !minterAddress}
             >
