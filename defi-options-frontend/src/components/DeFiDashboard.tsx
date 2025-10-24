@@ -528,13 +528,13 @@ export default function DeFiDashboard() {
         </Tabs>
       )}
 
-      <Alert className="border-blue-200 bg-blue-50">
+      {/* <Alert className="border-blue-200 bg-blue-50">
         <AlertDescription className="text-blue-800">
           <strong>🚀 Platform Status:</strong> All contracts deployed and
           connected. Using Direct RPC methods for reliable blockchain
           interaction.
         </AlertDescription>
-      </Alert>
+      </Alert> */}
     </div>
   );
 }
